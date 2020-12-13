@@ -16,18 +16,27 @@ type MyDTO = {
   };
 };
 
+// OK
 const compoundTable = Table<MyDTO>('SomeCompoundTable')(
   'someHashKey',
   'someRangeKey'
-); // OK
-const compoundTable = Table<MyDTO>('SomeCompoundTable')(
+);
+
+// FAILS. No such property on MyDTO
+const invalidCompoundTable1 = Table<MyDTO>('SomeCompoundTable')(
   'someHashKey',
-  'someKey'
-); // FAILS. No such property on MyDTO
-const compoundTable = Table<MyDTO>('SomeCompoundTable')('someHashKey', 'child'); // FAILS. child is not a valid key type
+  'someInvalidKey'
+);
+
+// FAILS. child is of type Map which is not a valid key type
+const invalidCompoundTable2 = Table<MyDTO>('SomeCompoundTable')(
+  'someHashKey',
+  'child'
+);
 
 compoundTable.get({ someHashKey: 1, someRangeKey: '123' }); // OK
 compoundTable.query({ someHashKey: 1 }); // OK
+
 compoundTable.get({ someHashKey: 1 }); // FAILS: Needs a range key
 compoundTable.get({ someHashKey: '1', someRangeKey: 'Joe' }); // FAILS: Wrong Hash type
 compoundTable.get({ someHashKey: 1, someRangeKey: 1 }); // FAILS: Wrong range key type
@@ -36,7 +45,7 @@ compoundTable.get({ someHashKey: 1, someRangeKeyBadSpelling: 'Joe' }); // FAILS:
 compoundTable.put({
   someHashKey: 1,
   someRangeKey: '2',
-});
+}); // OK
 
 const simpleTable = Table<MyDTO>('SomeSimpleTable')('someHashKey');
 
