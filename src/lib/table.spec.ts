@@ -26,6 +26,10 @@ describe('Table', () => {
       const result = await simpleTable.get(key);
       expect(result).toEqual(key);
     });
+    it('Should return null when no object is present', async () => {
+      const result = await simpleTable.get({ hash: 'random 123' });
+      expect(result).toEqual(null);
+    });
 
     it('Should put and get with explicit deserializer', async () => {
       const key = { hash: '1', name: 'Fred' };
@@ -83,12 +87,15 @@ describe('Table', () => {
         secretAccessKey: '2',
       },
     })('hash', 'sort');
+
     it('Should put and get', async () => {
       const key = { hash: '1', sort: 1 };
       await compoundTable.put(key);
       const result = await compoundTable.get(key);
-      expect(result).toEqual(key);
+      expect(result?.hash).toEqual(key.hash);
+      expect(result?.sort).toEqual(key.sort);
     });
+
     it('Should put and query', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',
