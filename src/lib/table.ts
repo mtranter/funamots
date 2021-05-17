@@ -14,7 +14,7 @@ type Table<A extends DynamoObject, HK extends string, RK extends string> = {
     hk: Pick<A, HK | RK>,
     schema?: DynamoMarshallerFor<AA>
   ) => Promise<AA | null>;
-  readonly put: <A>(a: A) => Promise<void>;
+  readonly put: (a: A) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 };
 
