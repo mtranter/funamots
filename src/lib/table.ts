@@ -9,22 +9,31 @@ import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
 
 export type Config = MarshallingOptions & DynamoDB.Types.ClientConfiguration;
 
-type Table<A extends DynamoObject, HK extends string, RK extends string> = {
+export type Table<
+  A extends DynamoObject,
+  HK extends string,
+  RK extends string
+> = {
   readonly get: <AA extends A = A>(
     hk: Pick<A, HK | RK>,
     schema?: DynamoMarshallerFor<AA>
   ) => Promise<AA | null>;
   readonly put: (a: A) => Promise<void>;
+  readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 };
+
+export type QueryableTable<
+  A extends DynamoObject,
+  HK extends string,
+  RK extends string
+> = Table<A, HK, RK> & Queryable<A, HK, RK>;
 
 type TableFactoryResult<
   A extends DynamoObject,
   HK extends string,
   RK extends string
-> = A[RK] extends never
-  ? Table<A, HK, RK>
-  : Table<A, HK, RK> & Queryable<A, HK, RK>;
+> = A[RK] extends never ? Table<A, HK, RK> : QueryableTable<A, HK, RK>;
 
 const extractKey = (
   obj: Record<string, DynamoPrimitive>,
@@ -71,6 +80,15 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
         }))
       },
       put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),
+      batchPut: (a) => dynamo.batchWriteItem({
+        RequestItems: {
+          [table]: a.map(item => ({
+            PutRequest: {
+              Item: marshaller.marshallItem(item)
+            }
+          }))
+        }
+      }).promise().then(() => ({})),
       delete: (k) => dynamo.deleteItem({ TableName: table, Key: marshaller.marshallItem(extractKey(k, hk, rk)) }).promise().then(() => ({})),
     } as TableFactoryResult<AA, HK, RK>
   }
