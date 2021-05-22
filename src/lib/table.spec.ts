@@ -26,6 +26,16 @@ describe('Table', () => {
       const result = await simpleTable.get(key);
       expect(result).toEqual(key);
     });
+    it('Should put and set', async () => {
+      const key = { hash: '1' };
+      await simpleTable.put(key);
+      // const result = await simpleTable.get(key);
+      // expect(result).toEqual(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      await simpleTable.set(key, setParams);
+      const result2 = await simpleTable.get(key);
+      expect(result2).toEqual({ ...key, ...setParams });
+    });
     it('Should return null when no object is present', async () => {
       const result = await simpleTable.get({ hash: 'random 123' });
       expect(result).toEqual(null);

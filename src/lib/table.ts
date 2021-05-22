@@ -19,6 +19,10 @@ export type Table<
     schema?: DynamoMarshallerFor<AA>
   ) => Promise<AA | null>;
   readonly put: (a: A) => Promise<void>;
+  readonly set: (
+    key: Pick<A, HK | RK>,
+    updates: Record<string, DynamoPrimitive>
+  ) => Promise<void>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 };
@@ -40,6 +44,24 @@ const extractKey = (
   hk: string,
   rk?: string
 ) => Object.assign({}, { [hk]: obj[hk] }, rk && { [rk]: obj[rk] });
+
+const serializeSetAction = (
+  r: Record<string, DynamoPrimitive>
+): { readonly expression: string; readonly attributes: ExpressionAttributes } =>
+  Object.keys(r).reduce(
+    (p, n, i) => {
+      const name = p.attributes.addName(n);
+      const nativeVal = r[n];
+      const value = p.attributes.addValue(nativeVal);
+      const expression =
+        i === 0 ? ` ${name} = ${value}` : `, ${name} = ${value}`;
+      return {
+        expression: p.expression + expression,
+        attributes: p.attributes,
+      };
+    },
+    { expression: 'SET', attributes: new ExpressionAttributes() }
+  );
 
 /**
  *
@@ -80,6 +102,19 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
         }))
       },
       put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),
+      set: (k, v) => {
+        const request = serializeSetAction(v)
+        const key = marshaller.marshallItem(extractKey(k, hk, rk))
+        return dynamo.updateItem({
+        TableName: table,
+        Key: key,
+        UpdateExpression: request.expression,
+        ExpressionAttributeNames: request.attributes.names,
+        ExpressionAttributeValues: request.attributes.values,
+        ReturnValues: 'ALL_NEW'
+      }).promise()
+      .then(() => ({}))
+    },
       batchPut: (a) => dynamo.batchWriteItem({
         RequestItems: {
           [table]: a.map(item => ({
