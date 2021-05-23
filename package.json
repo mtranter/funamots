@@ -38,12 +38,13 @@
   "engines": {
     "node": ">=10"
   },
+  "peerDependencies": {
+    "aws-sdk": "^2.798.0"
+  },
   "dependencies": {
     "@aws/dynamodb-auto-marshaller": "^0.7.1",
     "@aws/dynamodb-data-marshaller": "^0.7.3",
-    "@aws/dynamodb-expressions": "^0.7.3",
-    "@bitauth/libauth": "^1.17.1",
-    "aws-sdk": "^2.798.0"
+    "@aws/dynamodb-expressions": "^0.7.3"
   },
   "devDependencies": {
     "@istanbuljs/nyc-config-typescript": "^1.0.1",
@@ -52,6 +53,7 @@
     "@types/node": "^14.14.9",
     "@typescript-eslint/eslint-plugin": "^4.0.1",
     "@typescript-eslint/parser": "^4.0.1",
+    "aws-sdk": "^2.798.0",
     "codecov": "^3.5.0",
     "cspell": "^4.1.0",
     "cz-conventional-changelog": "^3.3.0",
