@@ -95,7 +95,8 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
           KeyConditionExpression: keyExpression,
           ExpressionAttributeNames: attributes.names,
           ExpressionAttributeValues: attributes.values,
-          ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey)
+          ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+          ScanIndexForward: opts.descending !== false
         }).promise().then(r => ({
           records: r.Items?.map(i => defaultSchema ? unmarshall(defaultSchema, i) : marshaller.unmarshallItem(i)),
           lastSortKey: r.LastEvaluatedKey && rk && marshaller.unmarshallItem(r.LastEvaluatedKey)[rk]
