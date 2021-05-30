@@ -8,7 +8,7 @@ export type QueryResult<A, K> = {
 
 type QueryOpts<A extends DynamoObject, RK extends string> = {
   readonly pageSize?: number;
-  readonly fromSortKey?: Pick<A, RK>;
+  readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
 };
 
@@ -18,7 +18,7 @@ export type Queryable<
   RK extends string
 > = {
   readonly query: <AA extends A = A>(
-    hk: Pick<A, HK>,
+    hk: A[HK],
     opts?: QueryOpts<AA, RK>
-  ) => Promise<QueryResult<A, Pick<A, RK>>>;
+  ) => Promise<QueryResult<A, A[RK]>>;
 };

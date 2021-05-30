@@ -87,8 +87,8 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
       get: (hkv, schemaOverride) => dynamo.getItem({ TableName: table, Key: marshaller.marshallItem(extractKey(hkv, hk, rk)) }).promise().then(r => r.Item ? ((defaultSchema || schemaOverride) ? unmarshall((schemaOverride || defaultSchema) as unknown as DynamoMarshallerFor<DynamoObject>, r.Item) : marshaller.unmarshallItem(r.Item)) : null),
       query: (hkv, opts) => {
         const attributes = new ExpressionAttributes();
-        const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(hkv[hk])}`
-        const lastKey = opts?.fromSortKey && rk && Object.assign({}, hkv, { [rk]: opts.fromSortKey })
+        const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(hkv)}`
+        const lastKey = opts?.fromSortKey && rk && Object.assign({}, {[hk]: hkv}, { [rk]: opts.fromSortKey })
         return dynamo.query({
           TableName: table,
           Limit: opts?.pageSize,
@@ -98,7 +98,7 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
           ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey)
         }).promise().then(r => ({
           records: r.Items?.map(i => defaultSchema ? unmarshall(defaultSchema, i) : marshaller.unmarshallItem(i)),
-          lastSortKey: r.LastEvaluatedKey && rk && marshaller.unmarshallItem(r.LastEvaluatedKey)[rk] as unknown as A[RK]
+          lastSortKey: r.LastEvaluatedKey && rk && marshaller.unmarshallItem(r.LastEvaluatedKey)[rk]
         }))
       },
       put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),

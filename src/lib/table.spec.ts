@@ -113,15 +113,12 @@ describe('Table', () => {
       }));
 
       await Promise.all(testObjects.map(compoundTable.put));
-      const result = await compoundTable.query({ hash: '1' }, { pageSize: 10 });
+      const result = await compoundTable.query('1', { pageSize: 10 });
       expect(result.records).toEqual(testObjects.slice(0, 10));
-      const result2 = await compoundTable.query(
-        { hash: '1' },
-        {
-          pageSize: 10,
-          fromSortKey: result.lastSortKey,
-        }
-      );
+      const result2 = await compoundTable.query('1', {
+        pageSize: 10,
+        fromSortKey: result.lastSortKey,
+      });
       expect(result2.records).toEqual(testObjects.slice(10));
     });
 
