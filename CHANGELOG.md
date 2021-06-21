@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.24](https://github.com/mtranter/funamots/compare/v0.1.22...v0.1.24) (2021-06-21)
+
 ### [0.1.22](https://github.com/mtranter/funamots/compare/v0.1.20...v0.1.22) (2021-05-30)
 
 ### [0.1.20](https://github.com/mtranter/funamots/compare/v0.1.18...v0.1.20) (2021-05-30)
