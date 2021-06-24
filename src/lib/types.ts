@@ -3,6 +3,12 @@ type ValueOf<T> = T[keyof T];
 // Types
 export type DynamoKeyTypes = string | number | ArrayBuffer | ArrayBufferView;
 
+export type DynamoObjectOf<T> = T extends Record<string, unknown>
+  ? { readonly [K in keyof T]: DynamoObjectOf<T[K]> }
+  : T extends DynamoPrimitive
+  ? T
+  : never;
+
 // eslint-disable-next-line functional/prefer-readonly-type
 export type DynamoObject = { [key: string]: DynamoPrimitive };
 

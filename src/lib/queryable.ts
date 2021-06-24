@@ -10,6 +10,7 @@ export type QueryOpts<A extends DynamoObject, RK extends string> = {
   readonly pageSize?: number;
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
+  readonly descending?: boolean;
 };
 
 export type Queryable<

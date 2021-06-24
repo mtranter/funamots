@@ -100,12 +100,13 @@ const query = (
   return dynamo
     .query({
       TableName: table,
-      IndexName: indexName,
       Limit: opts?.pageSize,
+      IndexName: indexName,
       KeyConditionExpression: keyExpression,
       ExpressionAttributeNames: attributes.names,
       ExpressionAttributeValues: attributes.values,
       ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+      ScanIndexForward: !(opts && opts.descending),
     })
     .promise()
     .then((r) => ({
@@ -117,7 +118,7 @@ const query = (
       lastSortKey:
         r.LastEvaluatedKey &&
         rk &&
-        (marshaller.unmarshallItem(r.LastEvaluatedKey)[rk] as any),
+        marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
     }));
 };
 /* eslint-enable */
