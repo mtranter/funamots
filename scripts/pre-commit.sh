@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-yarn test
+yarn test:int
