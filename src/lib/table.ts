@@ -4,7 +4,7 @@ import { DynamoDB } from 'aws-sdk';
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
-import { Queryable } from './queryable';
+import { Queryable, QueryOpts, QueryResult } from './queryable';
 import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
 
 export type Config = MarshallingOptions & DynamoDB.Types.ClientConfiguration;
@@ -25,6 +25,19 @@ export type Table<
   ) => Promise<void>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
+
+  readonly lsi: <RK extends DynamoValueKeys<A> & string>(
+    name: string,
+    rk: RK
+  ) => Queryable<A, HK, RK>;
+  readonly gsi: <
+    HK extends DynamoValueKeys<A> & string,
+    RK extends DynamoValueKeys<A> & string
+  >(
+    name: string,
+    hk: HK,
+    rk: RK
+  ) => Queryable<A, HK, RK>;
 };
 
 export type QueryableTable<
@@ -63,6 +76,52 @@ const serializeSetAction = (
     { expression: 'SET', attributes: new ExpressionAttributes() }
   );
 
+/* eslint-disable  @typescript-eslint/no-explicit-any */
+const query = (
+  dynamo: DynamoDb,
+  table: string,
+  hk: string,
+  rk: string,
+  marshaller: Marshaller,
+  defaultSchema: DynamoMarshallerFor<any>,
+  indexName?: string
+) => (
+  hkv: DynamoPrimitive,
+  opts?: QueryOpts<any, any>
+): Promise<QueryResult<any, any>> => {
+  const attributes = new ExpressionAttributes();
+  const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(
+    hkv
+  )}`;
+  const lastKey =
+    opts?.fromSortKey &&
+    rk &&
+    Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey });
+  return dynamo
+    .query({
+      TableName: table,
+      IndexName: indexName,
+      Limit: opts?.pageSize,
+      KeyConditionExpression: keyExpression,
+      ExpressionAttributeNames: attributes.names,
+      ExpressionAttributeValues: attributes.values,
+      ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+    })
+    .promise()
+    .then((r) => ({
+      records: r.Items?.map((i) =>
+        defaultSchema
+          ? unmarshall(defaultSchema, i)
+          : marshaller.unmarshallItem(i)
+      ),
+      lastSortKey:
+        r.LastEvaluatedKey &&
+        rk &&
+        (marshaller.unmarshallItem(r.LastEvaluatedKey)[rk] as any),
+    }));
+};
+/* eslint-enable */
+
 /**
  *
  * @param table The name of the DynamoDB table
@@ -84,23 +143,12 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
     const defaultSchema = typeof sortKeyOrMarshaller === "object" ? sortKeyOrMarshaller : schema
     const marshaller = new Marshaller(Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify', }, config));
     return {
-      get: (hkv, schemaOverride) => dynamo.getItem({ TableName: table, Key: marshaller.marshallItem(extractKey(hkv, hk, rk)) }).promise().then(r => r.Item ? ((defaultSchema || schemaOverride) ? unmarshall((schemaOverride || defaultSchema) as unknown as DynamoMarshallerFor<DynamoObject>, r.Item) : marshaller.unmarshallItem(r.Item)) : null),
-      query: (hkv, opts) => {
-        const attributes = new ExpressionAttributes();
-        const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(hkv)}`
-        const lastKey = opts?.fromSortKey && rk && Object.assign({}, {[hk]: hkv}, { [rk]: opts.fromSortKey })
-        return dynamo.query({
-          TableName: table,
-          Limit: opts?.pageSize,
-          KeyConditionExpression: keyExpression,
-          ExpressionAttributeNames: attributes.names,
-          ExpressionAttributeValues: attributes.values,
-          ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey)
-        }).promise().then(r => ({
-          records: r.Items?.map(i => defaultSchema ? unmarshall(defaultSchema, i) : marshaller.unmarshallItem(i)),
-          lastSortKey: r.LastEvaluatedKey && rk && marshaller.unmarshallItem(r.LastEvaluatedKey)[rk]
-        }))
-      },
+      get: (hkv, schemaOverride) => dynamo.getItem({ TableName: table, Key: marshaller.marshallItem(extractKey(hkv, hk, rk)) }).
+        promise()
+        .then(r => r.Item ? ((defaultSchema || schemaOverride) 
+          ? unmarshall((schemaOverride || defaultSchema) as unknown as DynamoMarshallerFor<DynamoObject>, r.Item) 
+          : marshaller.unmarshallItem(r.Item)) : null),
+      query: query(dynamo, table, hk, rk, marshaller, defaultSchema),
       put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),
       set: (k, v) => {
         const request = serializeSetAction(v)
@@ -125,5 +173,11 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
         }
       }).promise().then(() => ({})),
       delete: (k) => dynamo.deleteItem({ TableName: table, Key: marshaller.marshallItem(extractKey(k, hk, rk)) }).promise().then(() => ({})),
+      gsi: <HK extends DynamoValueKeys<A> & string, RK extends DynamoValueKeys<A> & string>(ixName: string, hk: HK, rk: RK): Queryable<A, HK, RK> => ({
+        query: query(dynamo, table, hk, rk, marshaller, defaultSchema, ixName)
+      }),
+      lsi: <RK extends DynamoValueKeys<A> & string>(ixName: string,  rk: RK): Queryable<A, HK, RK> => ({
+        query: query(dynamo, table, hk, rk, marshaller, defaultSchema, ixName)
+      })
     } as TableFactoryResult<AA, HK, RK>
   }

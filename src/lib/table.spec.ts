@@ -86,6 +86,8 @@ describe('Table', () => {
     type CompoundKey = {
       readonly hash: string;
       readonly sort: number;
+      readonly gsihash?: string;
+      readonly gsirange?: string;
     };
 
     const compoundTable = Table<CompoundKey>('CompoundTable', {
@@ -120,6 +122,20 @@ describe('Table', () => {
         fromSortKey: result.lastSortKey,
       });
       expect(result2.records).toEqual(testObjects.slice(10));
+    });
+    it('Should put and query a GSI', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+        gsihash: 'hash',
+        gsirange: `${100 - i}`,
+      }));
+
+      await Promise.all(testObjects.map(compoundTable.put));
+      const result = await compoundTable
+        .gsi('GSI1', 'gsihash', 'gsirange')
+        .query('hash');
+      expect(result.records.length).toEqual(testObjects.length);
     });
 
     it('Should delete', async () => {
