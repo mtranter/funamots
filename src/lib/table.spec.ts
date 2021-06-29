@@ -108,6 +108,21 @@ describe('Table', () => {
       expect(result?.sort).toEqual(key.sort);
     });
 
+    it('Should put and batch get', async () => {
+      const key1 = { hash: '1', sort: 1 };
+      const key2 = { hash: '2', sort: 1 };
+      await compoundTable.batchPut([key1, key2]);
+      const [result1, result2] = await compoundTable.batchGet([key1, key2]);
+      expect(result1).toEqual(key1);
+      expect(result2).toEqual(key2);
+    });
+    it('Should return empty array if batch get has no records', async () => {
+      const key1 = { hash: '18', sort: 1 };
+      const key2 = { hash: '19', sort: 1 };
+      const result = await compoundTable.batchGet([key1, key2]);
+      expect(result).toEqual([]);
+    });
+
     it('Should put and query', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',

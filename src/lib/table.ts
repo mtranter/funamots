@@ -18,6 +18,9 @@ export type Table<
     hk: Pick<A, HK | RK>,
     schema?: DynamoMarshallerFor<AA>
   ) => Promise<AA | null>;
+  readonly batchGet: (
+    hks: readonly Pick<A, HK | RK>[]
+  ) => Promise<readonly A[]>;
   readonly put: (a: A) => Promise<void>;
   readonly set: (
     key: Pick<A, HK | RK>,
@@ -143,12 +146,18 @@ export const Table: <A extends DynamoObject>(table: string, config?: Config, cli
     const rk = typeof sortKeyOrMarshaller === 'string' ? sortKeyOrMarshaller as RK : undefined
     const defaultSchema = typeof sortKeyOrMarshaller === "object" ? sortKeyOrMarshaller : schema
     const marshaller = new Marshaller(Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify', }, config));
+    
     return {
       get: (hkv, schemaOverride) => dynamo.getItem({ TableName: table, Key: marshaller.marshallItem(extractKey(hkv, hk, rk)) }).
         promise()
         .then(r => r.Item ? ((defaultSchema || schemaOverride) 
           ? unmarshall((schemaOverride || defaultSchema) as unknown as DynamoMarshallerFor<DynamoObject>, r.Item) 
           : marshaller.unmarshallItem(r.Item)) : null),
+      batchGet: (keys) => dynamo.batchGetItem({
+        RequestItems: {[table]: {
+          Keys: keys.map(hkv => marshaller.marshallItem(extractKey(hkv, hk, rk)))
+        }}
+      }).promise().then(r => Object.values(r.Responses)[0].map(v => (defaultSchema ? unmarshall(defaultSchema, v) : marshaller.unmarshallItem(v) ))),
       query: query(dynamo, table, hk, rk, marshaller, defaultSchema),
       put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),
       set: (k, v) => {
