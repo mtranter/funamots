@@ -6,8 +6,18 @@ export type QueryResult<A, K> = {
   readonly lastSortKey: K;
 };
 
+export type RangeKeyOps<RKV> =
+  | Record<'=', RKV>
+  | Record<'<', RKV>
+  | Record<'<=', RKV>
+  | Record<'>', RKV>
+  | Record<'>=', RKV>
+  | Record<'begins_with', RKV>
+  | Record<'BETWEEN', { readonly lower: RKV; readonly upper: RKV }>;
+
 export type QueryOpts<A extends DynamoObject, RK extends string> = {
   readonly pageSize?: number;
+  readonly sortKeyExpression?: RangeKeyOps<A[RK]>;
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;

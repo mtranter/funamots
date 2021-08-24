@@ -138,6 +138,19 @@ describe('Table', () => {
       });
       expect(result2.records).toEqual(testObjects.slice(10));
     });
+    it('Should put and query using begins_with', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+      }));
+
+      await Promise.all(testObjects.map(compoundTable.put));
+      const result = await compoundTable.query('1', {
+        pageSize: 10,
+        sortKeyExpression: { '>': 15 },
+      });
+      expect(result.records).toEqual(testObjects.slice(16));
+    });
     it('Should put and query a GSI', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',

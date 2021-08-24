@@ -4,7 +4,7 @@ import { DynamoDB } from 'aws-sdk';
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
-import { Queryable, QueryOpts, QueryResult } from './queryable';
+import { Queryable, QueryOpts, QueryResult, RangeKeyOps } from './queryable';
 import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
 
 export type Config = MarshallingOptions & DynamoDB.Types.ClientConfiguration;
@@ -79,6 +79,33 @@ const serializeSetAction = (
     { expression: 'SET', attributes: new ExpressionAttributes() }
   );
 
+const isBeginsWithOp = <RKV>(
+  op: RangeKeyOps<RKV>
+): op is Extract<RangeKeyOps<RKV>, { readonly begins_with: RKV }> =>
+  Object.keys(op)[0] === 'begins_with';
+
+const isBetweenOp = <RKV>(
+  op: RangeKeyOps<RKV>
+): op is Extract<
+  RangeKeyOps<RKV>,
+  { readonly BETWEEN: { readonly lower: RKV; readonly upper: RKV } }
+> => Object.keys(op)[0] === 'BETWEEN';
+
+const buildSortKeyExpression = <RKV>(
+  attrs: ExpressionAttributes,
+  rk: string,
+  op: RangeKeyOps<RKV>
+): string =>
+  isBetweenOp(op)
+    ? `${attrs.addName(rk)} BETWEEN ${attrs.addValue(
+        op.BETWEEN.lower
+      )} AND ${attrs.addValue(op.BETWEEN.upper)}`
+    : isBeginsWithOp(op)
+    ? `begins_with(${attrs.addName(rk)}, ${attrs.addValue(op.begins_with)})`
+    : `${attrs.addName(rk)} ${Object.keys(op)[0]} ${attrs.addValue(
+        Object.values(op)[0]
+      )}`;
+
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 const query = (
   dynamo: DynamoDb,
@@ -95,7 +122,11 @@ const query = (
   const attributes = new ExpressionAttributes();
   const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(
     hkv
-  )}`;
+  )}${
+    opts?.sortKeyExpression
+      ? ` and ${buildSortKeyExpression(attributes, rk, opts.sortKeyExpression)}`
+      : ''
+  }`;
   const lastKey =
     opts?.fromSortKey &&
     rk &&
