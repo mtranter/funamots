@@ -19,7 +19,7 @@ describe('Table', () => {
         accessKeyId: '1',
         secretAccessKey: '2',
       },
-    })('hash');
+    })({ hashKey: 'hash' });
     it('Should put and get', async () => {
       const key = { hash: '1' };
       await simpleTable.put(key);
@@ -29,13 +29,12 @@ describe('Table', () => {
     it('Should put and set', async () => {
       const key = { hash: '1' };
       await simpleTable.put(key);
-      // const result = await simpleTable.get(key);
-      // expect(result).toEqual(key);
       const setParams = { name: 'Johnny', age: 30 };
       await simpleTable.set(key, setParams);
       const result2 = await simpleTable.get(key);
       expect(result2).toEqual({ ...key, ...setParams });
     });
+
     it('Should return null when no object is present', async () => {
       const result = await simpleTable.get({ hash: 'random 123' });
       expect(result).toEqual(null);
@@ -45,8 +44,10 @@ describe('Table', () => {
       const key = { hash: '1', name: 'Fred' };
       await simpleTable.put(key);
       const result = await simpleTable.get(key, {
-        hash: Marshallers.string,
-        name: Marshallers.string,
+        marshaller: {
+          hash: Marshallers.string,
+          name: Marshallers.string,
+        },
       });
       expect(result).toEqual(key);
     });
@@ -54,8 +55,10 @@ describe('Table', () => {
       const key = { hash: '1' };
       await simpleTable.put(key);
       const result = simpleTable.get(key, {
-        hash: Marshallers.string,
-        name: Marshallers.string,
+        marshaller: {
+          hash: Marshallers.string,
+          name: Marshallers.string,
+        },
       });
       expect(result).rejects.toEqual(
         new Error('Cannot unmarshall from null attribute to required field')
@@ -98,7 +101,7 @@ describe('Table', () => {
         accessKeyId: '1',
         secretAccessKey: '2',
       },
-    })('hash', 'sort');
+    })({ hashKey: 'hash', sortKey: 'sort' });
 
     it('Should put and get', async () => {
       const key = { hash: '1', sort: 1 };
@@ -106,6 +109,25 @@ describe('Table', () => {
       const result = await compoundTable.get(key);
       expect(result?.hash).toEqual(key.hash);
       expect(result?.sort).toEqual(key.sort);
+    });
+
+    describe('with selected keys', () => {
+      const key = { hash: '1', sort: 1, gsihash: 'gsi hash value' };
+      const setup = async () => {
+        await compoundTable.put(key);
+        return compoundTable.get(key, { keys: ['gsihash', 'sort'] });
+      };
+      it('Should get selected keys', async () => {
+        const result = await setup();
+        expect(result?.gsihash).toEqual(key.gsihash);
+        expect(result?.sort).toEqual(key.sort);
+      });
+      it('Should not fetch non selected keys', async () => {
+        const result = await setup();
+        expect(result?.gsihash).toEqual(key.gsihash);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        expect((result as any).hash).toBeUndefined();
+      });
     });
 
     it('Should put and batch get', async () => {
