@@ -18,10 +18,7 @@ export type Table<
   HK extends string,
   RK extends string
 > = {
-  readonly get: <
-    AA extends A = A & DynamoObject,
-    Keys extends keyof A = keyof A
-  >(
+  readonly get: <AA extends A = A, Keys extends keyof AA = keyof AA>(
     hk: Pick<A, HK | RK>,
     opts?: {
       readonly marshaller?: DynamoMarshallerFor<AA>;

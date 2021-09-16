@@ -115,7 +115,9 @@ describe('Table', () => {
       const key = { hash: '1', sort: 1, gsihash: 'gsi hash value' };
       const setup = async () => {
         await compoundTable.put(key);
-        return compoundTable.get(key, { keys: ['gsihash', 'sort'] });
+        return compoundTable.get(key, {
+          keys: ['gsihash', 'sort'],
+        });
       };
       it('Should get selected keys', async () => {
         const result = await setup();
