@@ -31,5 +31,5 @@ export type Queryable<
   readonly query: <AA extends A = A>(
     hk: A[HK],
     opts?: QueryOpts<AA, RK>
-  ) => Promise<QueryResult<A, A[RK]>>;
+  ) => Promise<QueryResult<AA, A[RK]>>;
 };
