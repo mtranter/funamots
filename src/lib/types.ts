@@ -12,12 +12,19 @@ export type DynamoObjectOf<T> = T extends Record<string, unknown>
 // eslint-disable-next-line functional/prefer-readonly-type
 export type DynamoObject = { [key: string]: DynamoPrimitive };
 
-// eslint-disable-next-line functional/prefer-readonly-type
-type DynamoSet<T> = Set<T> | ReadonlySet<T>;
+type DynamoSet<T> = ReadonlySet<T> | ReadonlySet<T>;
 
-// prettier-ignore
-// eslint-disable-next-line functional/prefer-readonly-type
-export type DynamoPrimitive = DynamoKeyTypes | Iterable<ArrayBufferView> | Iterable<ArrayBuffer> | boolean | DynamoSet<string> | DynamoSet<number> | DynamoPrimitive[] | DynamoObject | undefined;
+export type DynamoPrimitive =
+  | DynamoKeyTypes
+  | Iterable<ArrayBufferView>
+  | Iterable<ArrayBuffer>
+  | boolean
+  | DynamoSet<string>
+  | DynamoSet<number>
+  // eslint-disable-next-line functional/prefer-readonly-type
+  | DynamoPrimitive[]
+  | DynamoObject
+  | undefined;
 
 // prettier-ignore
 // eslint-disable-next-line functional/prefer-readonly-type

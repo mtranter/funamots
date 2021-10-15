@@ -1,6 +1,6 @@
 {
   "name": "funamots",
-  "version": "0.3.2",
+  "version": "0.3.6",
   "description": "Functional typescript DynamoDB Client",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
@@ -47,7 +47,9 @@
     "jest-dynalite": "^3.4.1"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.36.1",
     "@istanbuljs/nyc-config-typescript": "^1.0.1",
+    "@shelf/jest-dynamodb": "^2.1.0",
     "@types/jest": "^26.0.15",
     "@types/node": "^14.14.9",
     "@typescript-eslint/eslint-plugin": "^4.0.1",

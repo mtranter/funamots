@@ -1,22 +1,26 @@
-import { Marshaller, MarshallingOptions } from '@aws/dynamodb-auto-marshaller';
+import { Marshaller } from '@aws/dynamodb-auto-marshaller';
 import {
   ExpressionAttributes,
   UpdateExpression,
 } from '@aws/dynamodb-expressions';
-import { DynamoDB } from 'aws-sdk';
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
 import { Queryable, QueryOpts, QueryResult, RangeKeyOps } from './queryable';
+import {
+  DynamodbTableConfig,
+  IndexDefinition,
+  IndexDefinitions,
+  TableDefinition,
+} from './table-builder';
 import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
 
-export type DynamoConfig = MarshallingOptions &
-  DynamoDB.Types.ClientConfiguration;
-
+// eslint-disable-next-line functional/no-mixed-type
 export type Table<
   A extends DynamoObject,
   HK extends string,
-  RK extends string
+  RK extends string,
+  Ixs extends IndexDefinitions
 > = {
   readonly get: <AA extends A = A, Keys extends keyof AA = keyof AA>(
     hk: Pick<A, HK | RK>,
@@ -34,33 +38,33 @@ export type Table<
     updates: Record<string, DynamoPrimitive>
   ) => Promise<void>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
+  readonly batchDelete: (
+    keys: ReadonlyArray<Pick<A, HK | RK>>
+  ) => Promise<void>;
+  readonly transactPut: (a: ReadonlyArray<A>) => Promise<void>;
+  readonly transactDelete: (
+    keys: ReadonlyArray<Pick<A, HK | RK>>
+  ) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 
-  readonly lsi: <RK extends DynamoValueKeys<A> & string>(
-    name: string,
-    rk: RK
-  ) => Queryable<A, HK, RK>;
-  readonly gsi: <
-    HK extends DynamoValueKeys<A> & string,
-    RK extends DynamoValueKeys<A> & string
-  >(
-    name: string,
-    hk: HK,
-    rk: RK
-  ) => Queryable<A, HK, RK>;
+  readonly indexes: Indexes<Ixs>;
 };
 
 export type QueryableTable<
   A extends DynamoObject,
   HK extends string,
-  RK extends string
-> = Table<A, HK, RK> & Queryable<A, HK, RK>;
+  RK extends string,
+  Ixs extends IndexDefinitions
+> = Table<A, HK, RK, Ixs> & Queryable<A, HK, RK>;
 
-type TableFactoryResult<
+export type TableFactoryResult<
   A extends DynamoObject,
   HK extends string,
-  RK extends string
-> = A[RK] extends never ? Table<A, HK, RK> : QueryableTable<A, HK, RK>;
+  RK extends string,
+  Ixs extends IndexDefinitions
+> = A[RK] extends never
+  ? Table<A, HK, RK, Ixs>
+  : QueryableTable<A, HK, RK, Ixs>;
 
 const extractKey = (
   obj: Record<string, DynamoPrimitive>,
@@ -110,7 +114,6 @@ const query = (
   hk: string,
   rk: string,
   marshaller: Marshaller,
-  defaultSchema: DynamoMarshallerFor<any>,
   indexName?: string
 ) => (
   hkv: DynamoPrimitive,
@@ -141,11 +144,7 @@ const query = (
     })
     .promise()
     .then((r) => ({
-      records: r.Items?.map((i) =>
-        defaultSchema
-          ? unmarshall(defaultSchema, i)
-          : marshaller.unmarshallItem(i)
-      ),
+      records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
       lastSortKey:
         r.LastEvaluatedKey &&
         rk &&
@@ -153,15 +152,6 @@ const query = (
     }));
 };
 /* eslint-enable */
-
-export type GsiConfig<
-  A extends Record<string, DynamoPrimitive>,
-  HK extends DynamoValueKeys<A> & string,
-  RK extends DynamoValueKeys<A> & string
-> = {
-  readonly hashKey: HK;
-  readonly sortKey: RK;
-};
 
 export type TableConfig<
   A extends Record<string, DynamoPrimitive>,
@@ -174,76 +164,187 @@ export type TableConfig<
   readonly customMarshaller?: DynamoMarshallerFor<AA>;
 };
 
+type Index<ID> = ID extends IndexDefinition<infer T, infer PK, infer SK>
+  ? Queryable<T, PK, SK>
+  : never;
+type Indexes<ID> = ID extends IndexDefinitions
+  ? {
+      readonly [K in keyof ID]: Index<ID[K]>;
+    }
+  : never;
+
 /**
  *
  * @param table The name of the DynamoDB table
  * @param config The dynamoDb and marshalling { @link Config }
  * @param client An optional implementation of the { @link DynamoDb } client
  */
-// prettier-ignore
-export const Table: <A extends DynamoObject>(table: string, config?: DynamoConfig, client?: DynamoDb) =>
-  /**
-   * @param hashKeyName The name of the Hash key. Must be present on [[A]]
-   * @param sortKeyOrMarshaller {string|DynamoMarshallerFor} The name of the range key or a default schema for marshalling
-   * @param schema A default schema for marshalling
-   * @returns [[TableFactoryResult]]
-   */
-  <HK extends DynamoValueKeys<A> & string, RK extends DynamoValueKeys<A> & string = never, AA extends A = A>(cfg: TableConfig<A, HK, RK, AA> ) => TableFactoryResult<AA, HK, RK> =
-  <A extends Record<string, DynamoPrimitive>>(table: string, config?: DynamoConfig, client?: DynamoDb) => <HK extends DynamoValueKeys<A> & string, RK extends DynamoValueKeys<A> & string = never, AA extends A = A>({hashKey, sortKey, customMarshaller}: TableConfig<A, HK, RK, AA> ) => {
-    const dynamo = client || new DynamoDb(config)
-    const marshaller = new Marshaller(Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify', }, config));
-    
-    return {
-      get: (hkv, opts) => { 
-        const projectionExpression = opts?.keys?.reduce((ea, n) => { ea.addName(n.toString()); return ea }, new ExpressionAttributes())        
-        return dynamo.getItem({ 
-          TableName: table, 
-          Key: marshaller.marshallItem(extractKey(hkv, hashKey, sortKey)), 
-          ProjectionExpression: projectionExpression && Object.keys(projectionExpression.names).join(", "), 
-          ExpressionAttributeNames: projectionExpression && projectionExpression.names
+// prettier-ignoreclie
+export const Table = <
+  T extends DynamoObject,
+  PartitionKey extends string & keyof T = never,
+  SortKey extends string & keyof T = never,
+  Ixs extends IndexDefinitions = Record<string, never>
+>(
+  tableDefintion: TableDefinition<T, PartitionKey, SortKey, Ixs>,
+  config?: DynamodbTableConfig
+): TableFactoryResult<T, PartitionKey, SortKey, Ixs> => {
+  const dynamo = config?.client || new DynamoDb(config);
+  const marshaller = new Marshaller(
+    Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify' }, config)
+  );
+  const {
+    name: tableName,
+    partitionKey: hashKey,
+    sortKey,
+    indexes,
+  } = tableDefintion;
+  const retval: TableFactoryResult<T, PartitionKey, SortKey, Ixs> = {
+    get: (hkv, opts) => {
+      const projectionExpression = opts?.keys?.reduce((ea, n) => {
+        ea.addName(n.toString());
+        return ea;
+      }, new ExpressionAttributes());
+      return dynamo
+        .getItem({
+          TableName: tableDefintion.name,
+          Key: marshaller.marshallItem(
+            extractKey(hkv, tableDefintion.partitionKey, sortKey)
+          ),
+          ProjectionExpression:
+            projectionExpression &&
+            Object.keys(projectionExpression.names).join(', '),
+          ExpressionAttributeNames:
+            projectionExpression && projectionExpression.names,
         })
         .promise()
-        .then(r => r.Item ? ((customMarshaller || opts?.marshaller) 
-          ? unmarshall((opts?.marshaller || customMarshaller) as unknown as DynamoMarshallerFor<DynamoObject>, r.Item)
-          : marshaller.unmarshallItem(r.Item)) : null)
-      },
-      batchGet: (keys) => dynamo.batchGetItem({
-        RequestItems: {[table]: {
-          Keys: keys.map(hkv => marshaller.marshallItem(extractKey(hkv, hashKey, sortKey)))
-        }}
-      }).promise().then(r => Object.values(r.Responses)[0].map(v => (customMarshaller ? unmarshall(customMarshaller, v) : marshaller.unmarshallItem(v) ))),
-      query: query(dynamo, table, hashKey, sortKey, marshaller, customMarshaller),
-      put: (a) => dynamo.putItem({ TableName: table, Item: marshall(a) }).promise().then(() => ({})),
-      set: (k, v) => {
-        const request = serializeSetAction(v)
-        const attributes = new ExpressionAttributes();
-        const expression = request.serialize(attributes);
-        const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey))
-        return dynamo.updateItem({
-        TableName: table,
-        Key: key,
-        UpdateExpression: expression,
-        ExpressionAttributeNames: attributes.names,
-        ExpressionAttributeValues: attributes.values,
-        ReturnValues: 'ALL_NEW'
-      }).promise()
-      .then(() => ({}))
+        .then((r) =>
+          r.Item
+            ? opts?.marshaller
+              ? unmarshall(
+                  (opts?.marshaller as unknown) as DynamoMarshallerFor<DynamoObject>,
+                  r.Item
+                )
+              : marshaller.unmarshallItem(r.Item)
+            : null
+        );
     },
-      batchPut: (a) => dynamo.batchWriteItem({
-        RequestItems: {
-          [table]: a.map(item => ({
-            PutRequest: {
-              Item: marshaller.marshallItem(item)
-            }
-          }))
-        }
-      }).promise().then(() => ({})),
-      delete: (k) => dynamo.deleteItem({ TableName: table, Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)) }).promise().then(() => ({})),
-      gsi: <HK extends DynamoValueKeys<A> & string, RK extends DynamoValueKeys<A> & string>(ixName: string, hk: HK, rk: RK): Queryable<A, HK, RK> => ({
-        query: query(dynamo, table, hk, rk, marshaller, customMarshaller, ixName)
+    batchGet: (keys) =>
+      dynamo
+        .batchGetItem({
+          RequestItems: {
+            [tableName]: {
+              Keys: keys.map((hkv) =>
+                marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
+              ),
+            },
+          },
+        })
+        .promise()
+        .then((r) =>
+          Object.values(r.Responses)[0].map(
+            marshaller.unmarshallItem.bind(marshaller)
+          )
+        ),
+    query: query(dynamo, tableName, hashKey, sortKey, marshaller),
+    put: (a) =>
+      dynamo
+        .putItem({ TableName: tableName, Item: marshall(a) })
+        .promise()
+        .then(() => ({})),
+    set: (k, v) => {
+      const request = serializeSetAction(v);
+      const attributes = new ExpressionAttributes();
+      const expression = request.serialize(attributes);
+      const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey));
+      return dynamo
+        .updateItem({
+          TableName: tableName,
+          Key: key,
+          UpdateExpression: expression,
+          ExpressionAttributeNames: attributes.names,
+          ExpressionAttributeValues: attributes.values,
+          ReturnValues: 'ALL_NEW',
+        })
+        .promise()
+        .then(() => ({}));
+    },
+    batchPut: (a) =>
+      dynamo
+        .batchWriteItem({
+          RequestItems: {
+            [tableName]: a.map((item) => ({
+              PutRequest: {
+                Item: marshaller.marshallItem(item),
+              },
+            })),
+          },
+        })
+        .promise()
+        .then(() => ({})),
+    batchDelete: (a) =>
+      dynamo
+        .batchWriteItem({
+          RequestItems: {
+            [tableName]: a.map((item) => ({
+              DeleteRequest: {
+                Key: marshaller.marshallItem(item),
+              },
+            })),
+          },
+        })
+        .promise()
+        .then(() => ({})),
+    transactPut: (a) =>
+      dynamo
+        .transactWriteItems({
+          TransactItems: a.map((item) => ({
+            Put: {
+              TableName: tableName,
+              Item: marshaller.marshallItem(item),
+            },
+          })),
+        })
+        .promise()
+        .then(() => ({})),
+    transactDelete: (a) =>
+      dynamo
+        .transactWriteItems({
+          TransactItems: a.map((item) => ({
+            Delete: {
+              TableName: tableName,
+              Key: marshaller.marshallItem(item),
+            },
+          })),
+        })
+        .promise()
+        .then(() => ({})),
+    delete: (k) =>
+      dynamo
+        .deleteItem({
+          TableName: tableName,
+          Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
+        })
+        .promise()
+        .then(() => ({})),
+    indexes: Object.keys(indexes).reduce(
+      (p, k) => ({
+        ...p,
+        ...{
+          [k]: {
+            query: query(
+              dynamo,
+              tableName,
+              indexes[k].partitionKey,
+              indexes[k].sortKey,
+              marshaller,
+              indexes[k].name
+            ),
+          },
+        },
       }),
-      lsi: <RK extends DynamoValueKeys<A> & string>(ixName: string,  rk: RK): Queryable<A, HK, RK> => ({
-        query: query(dynamo, table, hashKey, rk, marshaller, customMarshaller, ixName)
-      })
-    } as TableFactoryResult<AA, HK, RK>
-  }
+      {}
+    ),
+  } as TableFactoryResult<T, PartitionKey, SortKey, Ixs>;
+  return retval;
+};

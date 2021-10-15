@@ -1,54 +1,46 @@
-# Funamots
+# Typesafe Dynamo DB Client for Typescript.
 
-## Functional Dynamo TS Client
+## Why?
 
-### OBEY THE DYNAMO LAWS!
+DynamoDB has some non trivial data modelling & querying rules. This library expresses those rules as typescript types.
 
-<hr/>
+## How?
+
+### Basic Usage - Hash Key Only
 
 ```typescript
-type MyDTO = {
-  someHashKey: number;
-  someRangeKey: string;
-  child: {
-    name: string;
-    age: number;
+type SimpleKey = {
+  readonly hash: string;
+  readonly map?: {
+    readonly name: string;
   };
 };
 
-// OK
-const compoundTable = Table<MyDTO>('SomeCompoundTable')(
-  'someHashKey',
-  'someRangeKey'
-);
+const simpleTable = tableBuilder<SimpleKey>('MySimpleTable')
+  .withKey('hash')
+  .build();
 
-// FAILS. No such property on MyDTO
-const invalidCompoundTable1 = Table<MyDTO>('SomeCompoundTable')(
-  'someHashKey',
-  'someInvalidKey'
-);
+const value = { hash: '1' };
+await simpleTable.put(value);
+const result = await simpleTable.get(value);
+expect(result).toEqual(value);
+```
 
-// FAILS. child is of type Map which is not a valid key type
-const invalidCompoundTable2 = Table<MyDTO>('SomeCompoundTable')(
-  'someHashKey',
-  'child'
-);
+### Basic Usage - Hash & Sort Key
 
-compoundTable.get({ someHashKey: 1, someRangeKey: '123' }); // OK
-compoundTable.query({ someHashKey: 1 }); // OK
+```typescript
+type CompoundKey = {
+  readonly hash: string;
+  readonly sort: number;
+};
 
-compoundTable.get({ someHashKey: 1 }); // FAILS: Needs a range key
-compoundTable.get({ someHashKey: '1', someRangeKey: 'Joe' }); // FAILS: Wrong Hash type
-compoundTable.get({ someHashKey: 1, someRangeKey: 1 }); // FAILS: Wrong range key type
-compoundTable.get({ someHashKeyBadSpelling: 1, someRangeKey: 'Joe' }); // FAILS: Wrong Hash key name
-compoundTable.get({ someHashKey: 1, someRangeKeyBadSpelling: 'Joe' }); // FAILS: Wrong Range key name
-compoundTable.put({
-  someHashKey: 1,
-  someRangeKey: '2',
-}); // OK
+const compoundTable = tableBuilder<CompoundKey>('MyCompoundTable')
+  .withKey('hash', 'sort')
+  .build();
 
-const simpleTable = Table<MyDTO>('SomeSimpleTable')('someHashKey');
-
-simpleTable.get({ someHashKey: 1 });
-simpleTable.query({ someHashKey: 1 }); // FAILS: Cant query a simple keyed table
+const key = { hash: '1', sort: 1 };
+await compoundTable.put(key);
+const result = await compoundTable.get(key);
+expect(result?.hash).toEqual(key.hash);
+expect(result?.sort).toEqual(key.sort);
 ```

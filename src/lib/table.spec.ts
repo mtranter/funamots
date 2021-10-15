@@ -1,5 +1,5 @@
 import { Marshallers } from './marshalling';
-import { Table } from './table';
+import { tableBuilder } from './table-builder';
 
 jest.setTimeout(60000); // in milliseconds
 
@@ -11,20 +11,19 @@ describe('Table', () => {
         readonly name: string;
       };
     };
-    const simpleTable = Table<SimpleKey>('SimpleTable', {
-      endpoint: 'localhost:8000',
-      sslEnabled: false,
-      region: 'local-env',
-      credentials: {
-        accessKeyId: '1',
-        secretAccessKey: '2',
-      },
-    })({ hashKey: 'hash' });
+
+    const simpleTable = tableBuilder<SimpleKey>('SimpleTable')
+      .withKey('hash')
+      .build({
+        endpoint: process.env.MOCK_DYNAMODB_ENDPOINT,
+        sslEnabled: false,
+        region: 'local',
+      });
     it('Should put and get', async () => {
-      const key = { hash: '1' };
-      await simpleTable.put(key);
-      const result = await simpleTable.get(key);
-      expect(result).toEqual(key);
+      const value = { hash: '1' };
+      await simpleTable.put(value);
+      const result = await simpleTable.get(value);
+      expect(result).toEqual(value);
     });
     it('Should put and set', async () => {
       const key = { hash: '1' };
@@ -91,20 +90,21 @@ describe('Table', () => {
       readonly sort: number;
       readonly gsihash?: string;
       readonly gsirange?: string;
+      readonly lsirange: number;
     };
 
-    const compoundTable = Table<CompoundKey>('CompoundTable', {
-      endpoint: 'localhost:8000',
-      sslEnabled: false,
-      region: 'local-env',
-      credentials: {
-        accessKeyId: '1',
-        secretAccessKey: '2',
-      },
-    })({ hashKey: 'hash', sortKey: 'sort' });
+    const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
+      .withKey('hash', 'sort')
+      .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
+      .withLocalIndex('ix_by_lsirange', 'lsirange')
+      .build({
+        endpoint: process.env.MOCK_DYNAMODB_ENDPOINT,
+        sslEnabled: false,
+        region: 'local',
+      });
 
     it('Should put and get', async () => {
-      const key = { hash: '1', sort: 1 };
+      const key = { hash: '1', sort: 1, lsirange: 1 };
       await compoundTable.put(key);
       const result = await compoundTable.get(key);
       expect(result?.hash).toEqual(key.hash);
@@ -112,7 +112,12 @@ describe('Table', () => {
     });
 
     describe('with selected keys', () => {
-      const key = { hash: '1', sort: 1, gsihash: 'gsi hash value' };
+      const key = {
+        hash: '1',
+        sort: 1,
+        gsihash: 'gsi hash value',
+        lsirange: 1,
+      };
       const setup = async () => {
         await compoundTable.put(key);
         return compoundTable.get(key, {
@@ -133,12 +138,28 @@ describe('Table', () => {
     });
 
     it('Should put and batch get', async () => {
-      const key1 = { hash: '1', sort: 1 };
-      const key2 = { hash: '2', sort: 1 };
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
       await compoundTable.batchPut([key1, key2]);
-      const [result1, result2] = await compoundTable.batchGet([key1, key2]);
-      expect(result1).toEqual(key1);
-      expect(result2).toEqual(key2);
+      const results = await compoundTable.batchGet([key1, key2]);
+      expect(results).toContainEqual(key1);
+      expect(results).toContainEqual(key2);
+    });
+    it('Should put and batch delete', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
+      await compoundTable.batchPut([key1, key2]);
+      await compoundTable.batchDelete([key1, key2]);
+      const results = await compoundTable.batchGet([key1, key2]);
+      expect(results).toContainEqual([]);
+    });
+    it.skip('Should transactionally put and batch get - dynalite does not support transact put', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
+      await compoundTable.transactPut([key1, key2]);
+      const results = await compoundTable.batchGet([key1, key2]);
+      expect(results).toContainEqual(key1);
+      expect(results).toContainEqual(key2);
     });
     it('Should return empty array if batch get has no records', async () => {
       const key1 = { hash: '18', sort: 1 };
@@ -181,17 +202,34 @@ describe('Table', () => {
         sort: i,
         gsihash: 'hash',
         gsirange: `${100 - i}`,
+        lsirange: 1,
       }));
 
-      await Promise.all(testObjects.map(compoundTable.put));
-      const result = await compoundTable
-        .gsi('GSI1', 'gsihash', 'gsirange')
-        .query('hash');
+      await compoundTable.batchPut(testObjects);
+      const result = await compoundTable.indexes.ix_by_gsihash.query('hash');
       expect(result.records.length).toEqual(testObjects.length);
+    });
+    it('Should put and query a LSI', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+        lsirange: 20 - i,
+      }));
+      await compoundTable.batchPut(testObjects);
+      const result = await compoundTable.indexes.ix_by_lsirange.query('1', {
+        sortKeyExpression: { '>': 5 },
+      });
+      expect(
+        [...result.records].sort((a, b) => a.lsirange - b.lsirange)
+      ).toEqual(
+        [...testObjects.filter((a) => a.lsirange > 5)].sort(
+          (a, b) => a.lsirange - b.lsirange
+        )
+      );
     });
 
     it('Should delete', async () => {
-      const key = { hash: '1', sort: 1 };
+      const key = { hash: '1', sort: 1, lsirange: 1 };
       await compoundTable.put(key);
       const result = await compoundTable.get(key);
       expect(result).toEqual(key);

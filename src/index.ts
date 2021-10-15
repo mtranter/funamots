@@ -1,5 +1,13 @@
 import { Marshallers } from './lib/marshalling';
 import { Queryable } from './lib/queryable';
 import { QueryableTable, Table } from './lib/table';
+import { tableBuilder } from './lib/table-builder';
 import { DynamoObjectOf } from './lib/types';
-export { Table, Marshallers, Queryable, QueryableTable, DynamoObjectOf };
+export {
+  tableBuilder,
+  Table,
+  Marshallers,
+  Queryable,
+  QueryableTable,
+  DynamoObjectOf,
+};
