@@ -19,6 +19,7 @@ The syntax is also much friendlier than the vanilla AWS DynamoDB client.
 * Get/Put/Query
 * BatchX
 * TransactX
+* 
 Scans not supported.
 
 ## How?
