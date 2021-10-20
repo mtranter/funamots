@@ -1,9 +1,8 @@
 /** @type {import('ts-jest/dist/types').InitialOptionsTsJest} */
 module.exports = {
-  preset: 'jest-dynalite',
+  preset: '@shelf/jest-dynamodb',
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
   },
-  testEnvironment: 'jest-dynalite/environment',
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 };

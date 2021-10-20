@@ -32,6 +32,9 @@ export type Table<
   readonly batchGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
+  readonly transactGet: (
+    hks: readonly Pick<A, HK | RK>[]
+  ) => Promise<readonly A[]>;
   readonly put: (a: A) => Promise<void>;
   readonly set: (
     key: Pick<A, HK | RK>,
@@ -246,6 +249,22 @@ export const Table = <
             marshaller.unmarshallItem.bind(marshaller)
           )
         ),
+    transactGet: (keys) =>
+      dynamo
+        .transactGetItems({
+          TransactItems: keys.map((k) => ({
+            Get: {
+              Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
+              TableName: tableName,
+            },
+          })),
+        })
+        .promise()
+        .then((r) =>
+          r.Responses.map((r) =>
+            r.Item ? marshaller.unmarshallItem(r.Item) : undefined
+          ).filter((i) => i != undefined)
+        ),
     query: query(dynamo, tableName, hashKey, sortKey, marshaller),
     put: (a) =>
       dynamo
@@ -288,7 +307,9 @@ export const Table = <
           RequestItems: {
             [tableName]: a.map((item) => ({
               DeleteRequest: {
-                Key: marshaller.marshallItem(item),
+                Key: marshaller.marshallItem(
+                  extractKey(item, hashKey, sortKey)
+                ),
               },
             })),
           },
@@ -313,7 +334,7 @@ export const Table = <
           TransactItems: a.map((item) => ({
             Delete: {
               TableName: tableName,
-              Key: marshaller.marshallItem(item),
+              Key: marshaller.marshallItem(extractKey(item, hashKey, sortKey)),
             },
           })),
         })

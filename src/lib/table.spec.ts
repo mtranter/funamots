@@ -1,3 +1,5 @@
+import { DynamoDB } from 'aws-sdk';
+
 import { Marshallers } from './marshalling';
 import { tableBuilder } from './table-builder';
 
@@ -15,9 +17,11 @@ describe('Table', () => {
     const simpleTable = tableBuilder<SimpleKey>('SimpleTable')
       .withKey('hash')
       .build({
-        endpoint: process.env.MOCK_DYNAMODB_ENDPOINT,
-        sslEnabled: false,
-        region: 'local',
+        client: new DynamoDB({
+          endpoint: 'localhost:8000',
+          sslEnabled: false,
+          region: 'local-env',
+        }),
       });
     it('Should put and get', async () => {
       const value = { hash: '1' };
@@ -29,6 +33,18 @@ describe('Table', () => {
       const key = { hash: '1' };
       await simpleTable.put(key);
       const setParams = { name: 'Johnny', age: 30 };
+      await simpleTable.set(key, setParams);
+      const result2 = await simpleTable.get(key);
+      expect(result2).toEqual({ ...key, ...setParams });
+    });
+    it('Should put and set nested', async () => {
+      const key = { hash: '1', dimensions: { weight: 93 } };
+      await simpleTable.put(key);
+      const setParams = {
+        name: 'Johnny',
+        age: 30,
+        dimensions: { height: 183 },
+      };
       await simpleTable.set(key, setParams);
       const result2 = await simpleTable.get(key);
       expect(result2).toEqual({ ...key, ...setParams });
@@ -50,22 +66,9 @@ describe('Table', () => {
       });
       expect(result).toEqual(key);
     });
-    it('Should put and fail to get with explicit invalid deserializer', async () => {
-      const key = { hash: '1' };
-      await simpleTable.put(key);
-      const result = simpleTable.get(key, {
-        marshaller: {
-          hash: Marshallers.string,
-          name: Marshallers.string,
-        },
-      });
-      expect(result).rejects.toEqual(
-        new Error('Cannot unmarshall from null attribute to required field')
-      );
-    });
 
     it('Should delete', async () => {
-      const key = { hash: '1' };
+      const key = { hash: '1', age: 30 };
       await simpleTable.put(key);
       const result = await simpleTable.get(key);
       expect(result).toEqual(key);
@@ -98,9 +101,9 @@ describe('Table', () => {
       .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
       .withLocalIndex('ix_by_lsirange', 'lsirange')
       .build({
-        endpoint: process.env.MOCK_DYNAMODB_ENDPOINT,
+        endpoint: 'localhost:8000',
         sslEnabled: false,
-        region: 'local',
+        region: 'local-env',
       });
 
     it('Should put and get', async () => {
@@ -145,13 +148,30 @@ describe('Table', () => {
       expect(results).toContainEqual(key1);
       expect(results).toContainEqual(key2);
     });
+    it('Should transact put and get', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
+      await compoundTable.transactPut([key1, key2]);
+      const results = await compoundTable.transactGet([key1, key2]);
+      expect(results).toContainEqual(key1);
+      expect(results).toContainEqual(key2);
+    });
     it('Should put and batch delete', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };
       await compoundTable.batchPut([key1, key2]);
       await compoundTable.batchDelete([key1, key2]);
       const results = await compoundTable.batchGet([key1, key2]);
-      expect(results).toContainEqual([]);
+      expect(results).toEqual([]);
+    });
+
+    it('Should transact put and delete', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
+      await compoundTable.transactPut([key1, key2]);
+      await compoundTable.transactDelete([key1, key2]);
+      const results = await compoundTable.batchGet([key1, key2]);
+      expect(results).toEqual([]);
     });
     it.skip('Should transactionally put and batch get - dynalite does not support transact put', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
