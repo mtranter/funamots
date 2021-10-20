@@ -4,6 +4,17 @@
 
 DynamoDB has some non trivial data modelling & querying rules. This library expresses those rules as typescript types.
 
+This library leans on some type level programming to stop mistakes at compile time that normally arent caught until runtime.
+
+e.g. The compiler will whinge at you if you try and
+
+- query by non key attributes
+- get with non key attributes
+- put an item missing key attributes
+- get/query/put with key attributes whos types do not match the configured table
+
+The syntax is also much friendlier than the vanilla AWS DynamoDB client.
+
 ## How?
 
 ### Basic Usage - Hash Key Only
@@ -84,3 +95,13 @@ const result = await compoundTable.indexes.ix_by_lsirange.query('1', {
   sortKeyExpression: { '>': 5 },
 });
 ```
+
+### Use
+
+`npm install funamots`
+or
+`yarn add funamots`
+
+### Develop
+
+`yarn test` uses jest-dynamodb to run a local dynamodb instance.
