@@ -147,7 +147,7 @@ const OrdersRepo = (client: DynamoDB) => {
           sortKeyExpression: { '>': sinceIsoDate },
         })
         .then((r) => r.records.map((r) => r.order)),
-    listTodaysOrders: (nextPageKey: string) =>
+    listTodaysOrders: (nextPageKey?: string) =>
       table.indexes.dailyOrders
         .query(dateToDay(new Date().toISOString()), {
           fromSortKey: nextPageKey,
