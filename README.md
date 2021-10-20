@@ -8,8 +8,8 @@ This library leans on some type level programming to stop mistakes at compile ti
 
 e.g. The compiler will whinge at you if you try and
 
-- query by non key attributes
 - get with non key attributes
+- query by non key attributes
 - put an item missing key attributes
 - get/query/put with key attributes whos types do not match the configured table
 
@@ -94,6 +94,70 @@ await compoundTable.batchPut(testLocalObjects);
 const result = await compoundTable.indexes.ix_by_lsirange.query('1', {
   sortKeyExpression: { '>': 5 },
 });
+```
+
+### "Real world" Repository Pattern
+
+```typescript
+type Order = {
+  readonly orderId: string;
+  readonly orderDate: string;
+  readonly customerId: string;
+  readonly products: string[];
+  readonly totalPrice: number;
+};
+
+const OrdersRepo = (client: DynamoDB) => {
+  type OrderDto = {
+    readonly hash: string;
+    readonly range: 'ORDER';
+    readonly customerIxHash: string;
+    readonly dateSort: string;
+    readonly dailyOrdersIxHash: string;
+    readonly order: Order;
+  };
+
+  const table = tableBuilder<OrderDto>('Orders')
+    .withKey('hash', 'range')
+    .withGlobalIndex('ordersByCustomer', 'customerIxHash', 'dateSort')
+    .withGlobalIndex('dailyOrders', 'dailyOrdersIxHash', 'dateSort')
+    .build({ client });
+
+  const dateToDay = (isoDate: string) => {
+    const date = new Date(isoDate);
+    return `${date.getUTCFullYear()}${date.getUTCMonth()}${date.getUTCDay()}`;
+  };
+
+  const mapToDto = (o: Order): OrderDto => ({
+    hash: o.orderId,
+    range: 'ORDER',
+    customerIxHash: o.customerId,
+    dateSort: `${o.orderDate}:${o.orderId}`,
+    dailyOrdersIxHash: dateToDay(o.orderDate),
+    order: o,
+  });
+
+  return {
+    saveOrder: (o: Order) => table.put(mapToDto(o)),
+    getOrder: (orderId: string) =>
+      table.get({ hash: orderId, range: 'ORDER' }).then((r) => r?.order),
+    getCustomerOrdersSince: (customerId: string, sinceIsoDate: string) =>
+      table.indexes.ordersByCustomer
+        .query(customerId, {
+          sortKeyExpression: { '>': sinceIsoDate },
+        })
+        .then((r) => r.records.map((r) => r.order)),
+    listTodaysOrders: (nextPageKey: string) =>
+      table.indexes.dailyOrders
+        .query(dateToDay(new Date().toISOString()), {
+          fromSortKey: nextPageKey,
+        })
+        .then((r) => ({
+          nextPageKey: r.lastSortKey,
+          orders: r.records.map((r) => r.order),
+        })),
+  };
+};
 ```
 
 ### Use
