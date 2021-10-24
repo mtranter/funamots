@@ -1,6 +1,6 @@
 {
   "name": "funamots",
-  "version": "1.0.0-RC1",
+  "version": "1.0.0-RC3",
   "description": "Functional typescript DynamoDB Client",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
@@ -80,6 +80,7 @@
   "files": [
     "build/main",
     "build/module",
+    "dist/**",
     "!**/*.spec.*",
     "!**/*.json",
     "CHANGELOG.md",
