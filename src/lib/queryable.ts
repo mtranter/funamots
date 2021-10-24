@@ -21,6 +21,7 @@ export type QueryOpts<A extends DynamoObject, RK extends string> = {
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;
+  readonly consistentRead?: boolean;
 };
 
 export type Queryable<

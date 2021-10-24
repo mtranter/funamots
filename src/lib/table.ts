@@ -25,7 +25,7 @@ export type Table<
   readonly get: <AA extends A = A, Keys extends keyof AA = keyof AA>(
     hk: Pick<A, HK | RK>,
     opts?: {
-      readonly consitentRead?: boolean;
+      readonly consistentRead?: boolean;
       readonly marshaller?: DynamoMarshallerFor<AA>;
       readonly keys?: readonly Keys[];
     }
@@ -33,7 +33,7 @@ export type Table<
   readonly batchGet: <Keys extends keyof A = keyof A>(
     hks: readonly Pick<A, HK | RK>[],
     opts?: {
-      readonly consitentRead?: boolean;
+      readonly consistentRead?: boolean;
       readonly keys?: readonly Keys[];
     }
   ) => Promise<readonly Pick<A, Keys>[]>;
@@ -219,6 +219,7 @@ export const Table = <
           Key: marshaller.marshallItem(
             extractKey(hkv, tableDefintion.partitionKey, sortKey)
           ),
+          ConsistentRead: opts?.consistentRead,
           ProjectionExpression:
             projectionExpression &&
             Object.keys(projectionExpression.names).join(', '),
@@ -249,7 +250,7 @@ export const Table = <
               Keys: keys.map((hkv) =>
                 marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
               ),
-              ConsistentRead: opts?.consitentRead,
+              ConsistentRead: opts?.consistentRead,
               ProjectionExpression:
                 projectionExpression &&
                 Object.keys(projectionExpression.names).join(', '),

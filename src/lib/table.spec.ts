@@ -155,7 +155,7 @@ describe('Table', () => {
       await compoundTable.batchPut([key1, key2]);
       const results = await compoundTable.batchGet([key1, key2], {
         keys: ['lsirange'],
-        consitentRead: true,
+        consistentRead: true,
       });
       expect(results).toContainEqual({ lsirange: 1 });
       expect(results).toContainEqual({ lsirange: 2 });
