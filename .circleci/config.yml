@@ -3,7 +3,7 @@ version: 2
 jobs:
   'build':
     docker:
-      - image: circleci/node:14
+      - image: timbru31/java-node:8-fermium
     steps:
       - checkout
       # Download and cache dependencies
