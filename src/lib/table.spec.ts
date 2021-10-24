@@ -148,6 +148,18 @@ describe('Table', () => {
       expect(results).toContainEqual(key1);
       expect(results).toContainEqual(key2);
     });
+
+    it('Should put and batch get selected keys', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '2', sort: 1, lsirange: 2 };
+      await compoundTable.batchPut([key1, key2]);
+      const results = await compoundTable.batchGet([key1, key2], {
+        keys: ['lsirange'],
+        consitentRead: true,
+      });
+      expect(results).toContainEqual({ lsirange: 1 });
+      expect(results).toContainEqual({ lsirange: 2 });
+    });
     it('Should transact put and get', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };

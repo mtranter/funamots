@@ -25,13 +25,18 @@ export type Table<
   readonly get: <AA extends A = A, Keys extends keyof AA = keyof AA>(
     hk: Pick<A, HK | RK>,
     opts?: {
+      readonly consitentRead?: boolean;
       readonly marshaller?: DynamoMarshallerFor<AA>;
       readonly keys?: readonly Keys[];
     }
   ) => Promise<Pick<AA, Keys> | null>;
-  readonly batchGet: (
-    hks: readonly Pick<A, HK | RK>[]
-  ) => Promise<readonly A[]>;
+  readonly batchGet: <Keys extends keyof A = keyof A>(
+    hks: readonly Pick<A, HK | RK>[],
+    opts?: {
+      readonly consitentRead?: boolean;
+      readonly keys?: readonly Keys[];
+    }
+  ) => Promise<readonly Pick<A, Keys>[]>;
   readonly transactGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
@@ -232,14 +237,24 @@ export const Table = <
             : null
         );
     },
-    batchGet: (keys) =>
-      dynamo
+    batchGet: (keys, opts) => {
+      const projectionExpression = opts?.keys?.reduce((ea, n) => {
+        ea.addName(n.toString());
+        return ea;
+      }, new ExpressionAttributes());
+      return dynamo
         .batchGetItem({
           RequestItems: {
             [tableName]: {
               Keys: keys.map((hkv) =>
                 marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
               ),
+              ConsistentRead: opts?.consitentRead,
+              ProjectionExpression:
+                projectionExpression &&
+                Object.keys(projectionExpression.names).join(', '),
+              ExpressionAttributeNames:
+                projectionExpression && projectionExpression.names,
             },
           },
         })
@@ -248,7 +263,8 @@ export const Table = <
           Object.values(r.Responses)[0].map(
             marshaller.unmarshallItem.bind(marshaller)
           )
-        ),
+        );
+    },
     transactGet: (keys) =>
       dynamo
         .transactGetItems({
