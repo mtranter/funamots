@@ -31,13 +31,68 @@ describe('Table', () => {
       const result = await simpleTable.get(value);
       expect(result).toEqual(value);
     });
-    it('Should put and set', async () => {
+    it('Should put and set and return all new values', async () => {
       const key = { hash: '1' };
       await simpleTable.put(key);
       const setParams = { name: 'Johnny', age: 30 };
-      await simpleTable.set(key, setParams);
-      const result2 = await simpleTable.get(key);
+      const result2 = await simpleTable.set(key, setParams);
       expect(result2).toEqual({ ...key, ...setParams });
+    });
+    it('Should put and set and return all old values', async () => {
+      const key = { hash: '1' };
+      await simpleTable.put(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        returnValue: 'ALL_OLD',
+      });
+      expect(result2).toEqual(key);
+    });
+    it('Should put and set and return updated new values', async () => {
+      const key = { hash: '1' };
+      await simpleTable.put(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        returnValue: 'UPDATED_NEW',
+      });
+      expect(result2).toEqual(setParams);
+    });
+    it('Should put and set and return updated old values', async () => {
+      const key = { hash: '1', name: 'Fred' };
+      await simpleTable.put(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        returnValue: 'UPDATED_OLD',
+      });
+      expect(result2).toEqual({ name: 'Fred' });
+    });
+
+    it('Should put and set and return updated new values with a condition expression', async () => {
+      const key = { hash: '1', name: 'Fred' };
+      await simpleTable.put(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        conditionExpression: { name: { '=': 'Fred' } },
+      });
+      expect(result2).toEqual({ ...key, ...setParams });
+    });
+
+    it('Should put and not set when condition expression fails', async () => {
+      const key = { hash: '1', name: 'Fred' };
+      await simpleTable.put(key);
+      const setParams = { name: 'Johnny', age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        conditionExpression: { name: { '=': 'John' } },
+      });
+      expect(result2).toEqual(undefined);
+    });
+    it('Should put and set and return nothing for requesting updated_old values when no old values are updated', async () => {
+      const key = { hash: '1', name: 'Fred' };
+      await simpleTable.put(key);
+      const setParams = { age: 30 };
+      const result2 = await simpleTable.set(key, setParams, {
+        returnValue: 'UPDATED_OLD',
+      });
+      expect(result2).toEqual(undefined);
     });
     it('Should put and set nested', async () => {
       const key = { hash: '1', dimensions: { weight: 93 } };

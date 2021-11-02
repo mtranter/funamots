@@ -6,7 +6,7 @@ export type QueryResult<A, K> = {
   readonly lastSortKey: K;
 };
 
-export type RangeKeyOps<RKV> =
+export type ComparisonAlg<RKV> =
   | Record<'=', RKV>
   | Record<'<', RKV>
   | Record<'<=', RKV>
@@ -17,7 +17,7 @@ export type RangeKeyOps<RKV> =
 
 export type QueryOpts<A extends DynamoObject, RK extends string> = {
   readonly pageSize?: number;
-  readonly sortKeyExpression?: RangeKeyOps<A[RK]>;
+  readonly sortKeyExpression?: ComparisonAlg<A[RK]>;
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;

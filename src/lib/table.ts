@@ -8,7 +8,7 @@ import {
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
-import { Queryable, QueryOpts, QueryResult, RangeKeyOps } from './queryable';
+import { ComparisonAlg, Queryable, QueryOpts, QueryResult } from './queryable';
 import {
   DynamodbTableConfig,
   IndexDefinition,
@@ -16,6 +16,33 @@ import {
   TableDefinition,
 } from './table-builder';
 import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
+
+type UpdateReturnValue =
+  | 'NONE'
+  | 'ALL_OLD'
+  | 'UPDATED_OLD'
+  | 'ALL_NEW'
+  | 'UPDATED_NEW';
+
+type ConditionExpression<A extends DynamoObject> = Partial<
+  {
+    readonly [K in keyof A]: ComparisonAlg<A[K]>;
+  }
+>;
+
+type SetOpts<A extends DynamoObject, RV extends UpdateReturnValue> = {
+  readonly returnValue?: RV;
+  readonly conditionExpression?: ConditionExpression<A>;
+};
+
+const serializeConditionExpression = <A extends DynamoObject>(
+  ce: ConditionExpression<A>,
+  ea: ExpressionAttributes
+): string => {
+  return Object.keys(ce)
+    .map((e) => serializeComparisonAlg(ea, e, ce[e]))
+    .join(' AND ');
+};
 
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
@@ -43,10 +70,19 @@ export type Table<
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
   readonly put: (a: A) => Promise<void>;
-  readonly set: (
+  readonly set: <RV extends UpdateReturnValue = 'ALL_NEW'>(
     key: Pick<A, HK | RK>,
-    updates: Omit<A, HK | RK>
-  ) => Promise<void>;
+    updates: Partial<Omit<A, HK | RK>>,
+    opts?: SetOpts<A, RV>
+  ) => Promise<
+    RV extends 'ALL_NEW'
+      ? A
+      : RV extends 'ALL_OLD'
+      ? A
+      : RV extends 'NONE'
+      ? void
+      : Partial<A>
+  >;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
@@ -118,21 +154,21 @@ const serializeSetAction = (
   }, ue);
 
 const isBeginsWithOp = <RKV>(
-  op: RangeKeyOps<RKV>
-): op is Extract<RangeKeyOps<RKV>, { readonly begins_with: RKV }> =>
+  op: ComparisonAlg<RKV>
+): op is Extract<ComparisonAlg<RKV>, { readonly begins_with: RKV }> =>
   Object.keys(op)[0] === 'begins_with';
 
 const isBetweenOp = <RKV>(
-  op: RangeKeyOps<RKV>
+  op: ComparisonAlg<RKV>
 ): op is Extract<
-  RangeKeyOps<RKV>,
+  ComparisonAlg<RKV>,
   { readonly BETWEEN: { readonly lower: RKV; readonly upper: RKV } }
 > => Object.keys(op)[0] === 'BETWEEN';
 
-const buildSortKeyExpression = <RKV>(
+const serializeComparisonAlg = <RKV>(
   attrs: ExpressionAttributes,
   rk: string,
-  op: RangeKeyOps<RKV>
+  op: ComparisonAlg<RKV>
 ): string =>
   isBetweenOp(op)
     ? `${attrs.addName(rk)} BETWEEN ${attrs.addValue(
@@ -161,7 +197,7 @@ const query = (
     hkv
   )}${
     opts?.sortKeyExpression
-      ? ` and ${buildSortKeyExpression(attributes, rk, opts.sortKeyExpression)}`
+      ? ` and ${serializeComparisonAlg(attributes, rk, opts.sortKeyExpression)}`
       : ''
   }`;
   const lastKey =
@@ -317,11 +353,14 @@ export const Table = <
         .putItem({ TableName: tableName, Item: marshall(a) })
         .promise()
         .then(() => ({})),
-    set: (k, v) => {
+    set: (k, v, opts) => {
       const request = serializeSetAction(v);
       const attributes = new ExpressionAttributes();
       const expression = request.serialize(attributes);
       const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey));
+      const conditionExpression = opts?.conditionExpression
+        ? serializeConditionExpression(opts.conditionExpression, attributes)
+        : undefined;
       return dynamo
         .updateItem({
           TableName: tableName,
@@ -329,10 +368,20 @@ export const Table = <
           UpdateExpression: expression,
           ExpressionAttributeNames: attributes.names,
           ExpressionAttributeValues: attributes.values,
-          ReturnValues: 'ALL_NEW',
+          ReturnValues: opts?.returnValue || 'ALL_NEW',
+          ConditionExpression: conditionExpression,
         })
         .promise()
-        .then(() => ({}));
+        .then((i) =>
+          i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
+        )
+        .catch((e) => {
+          if (e.name === 'ConditionalCheckFailedException') {
+            return Promise.resolve(undefined);
+          } else {
+            return Promise.reject(e);
+          }
+        });
     },
     batchPut: (a) =>
       dynamo
