@@ -12,7 +12,10 @@
     "esModuleInterop": true,
     "declaration": true,
     "listFiles": false,
-    "lib": ["es6"],
+    "lib": [
+      "es6"
+    ],
+    "downlevelIteration": true
   },
   "exclude": [
     ".vscode",

@@ -12,6 +12,8 @@ describe('Table', () => {
       readonly map?: {
         readonly name: string;
       };
+      readonly name?: string;
+      readonly age?: number;
     };
 
     const simpleTable = tableBuilder<SimpleKey>('SimpleTable')
@@ -47,7 +49,30 @@ describe('Table', () => {
       };
       await simpleTable.set(key, setParams);
       const result2 = await simpleTable.get(key);
-      expect(result2).toEqual({ ...key, ...setParams });
+
+      expect(result2).toEqual({
+        ...key,
+        ...setParams,
+        ...{ dimensions: { weight: 93, height: 183 } },
+      });
+    });
+    it('Should put and remove nested', async () => {
+      const key = { hash: '1', dimensions: { weight: 93 } };
+      await simpleTable.put(key);
+      const setParams = {
+        name: 'Johnny',
+        age: 30,
+        dimensions: { weight: undefined as string | undefined, height: 23 },
+      };
+      await simpleTable.set(key, setParams);
+      const result2 = await simpleTable.get(key);
+
+      expect(result2).toEqual({
+        hash: '1',
+        name: 'Johnny',
+        age: 30,
+        dimensions: { height: 23 },
+      });
     });
 
     it('Should return null when no object is present', async () => {

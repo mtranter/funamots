@@ -1,6 +1,8 @@
 import { Marshaller } from '@aws/dynamodb-auto-marshaller';
 import {
+  AttributePath,
   ExpressionAttributes,
+  PathElement,
   UpdateExpression,
 } from '@aws/dynamodb-expressions';
 import DynamoDb from 'aws-sdk/clients/dynamodb';
@@ -43,7 +45,7 @@ export type Table<
   readonly put: (a: A) => Promise<void>;
   readonly set: (
     key: Pick<A, HK | RK>,
-    updates: Record<string, DynamoPrimitive>
+    updates: Omit<A, HK | RK>
   ) => Promise<void>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
@@ -53,6 +55,7 @@ export type Table<
   readonly transactDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
   ) => Promise<void>;
+  readonly transactWrite: (a: ReadonlyArray<A>) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 
   readonly indexes: Indexes<Ixs>;
@@ -81,12 +84,38 @@ const extractKey = (
 ) => Object.assign({}, { [hk]: obj[hk] }, rk && { [rk]: obj[rk] });
 
 const serializeSetAction = (
-  r: Record<string, DynamoPrimitive>
+  r: Record<string, DynamoPrimitive>,
+  path: readonly PathElement[] = [],
+  ue = new UpdateExpression()
 ): UpdateExpression =>
   Object.keys(r).reduce((p, n) => {
-    p.set(n, r[n]);
+    const toSet = r[n];
+    if (!Array.isArray(toSet) && typeof toSet === 'object') {
+      serializeSetAction(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        toSet as any,
+        [...path, { type: 'AttributeName', name: n }],
+        ue
+      );
+    } else {
+      toSet
+        ? p.set(
+            new AttributePath([
+              ...path,
+              { type: 'AttributeName', name: n } as const,
+            ]),
+            toSet
+          )
+        : p.remove(
+            new AttributePath([
+              ...path,
+              { type: 'AttributeName', name: n } as const,
+            ])
+          );
+    }
+
     return p;
-  }, new UpdateExpression());
+  }, ue);
 
 const isBeginsWithOp = <RKV>(
   op: RangeKeyOps<RKV>
