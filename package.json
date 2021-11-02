@@ -1,6 +1,6 @@
 {
   "name": "funamots",
-  "version": "1.2.0",
+  "version": "1.3.1",
   "description": "Functional typescript DynamoDB Client",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
@@ -15,7 +15,7 @@
     "test": "run-s build test:*",
     "test:lint": "eslint src --ext .ts",
     "test:prettier": "prettier \"src/**/*.ts\" --list-different",
-    "test:int": "jest",
+    "test:int": "jest --collectCoverage",
     "check-cli": "run-s test diff-integration-tests check-integration-tests",
     "check-integration-tests": "run-s check-integration-test:*",
     "diff-integration-tests": "mkdir -p diff && rm -rf diff/test && cp -r test diff/test && rm -rf diff/test/test-*/.git && cd diff && git init --quiet && git add -A && git commit --quiet --no-verify --allow-empty -m 'WIP' && echo '\\n\\nCommitted most recent integration test output in the \"diff\" directory. Review the changes with \"cd diff && git diff HEAD\" or your preferred git diff viewer.'",
