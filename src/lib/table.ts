@@ -30,9 +30,13 @@ type ConditionExpression<A extends DynamoObject> = Partial<
   }
 >;
 
-type SetOpts<A extends DynamoObject, RV extends UpdateReturnValue> = {
+type SetOpts<
+  A extends DynamoObject,
+  RV extends UpdateReturnValue,
+  CE extends ConditionExpression<A> | never
+> = {
   readonly returnValue?: RV;
-  readonly conditionExpression?: ConditionExpression<A>;
+  readonly conditionExpression?: CE;
 };
 
 const serializeConditionExpression = <A extends DynamoObject>(
@@ -43,6 +47,25 @@ const serializeConditionExpression = <A extends DynamoObject>(
     .map((e) => serializeComparisonAlg(ea, e, ce[e]))
     .join(' AND ');
 };
+
+type PartSetResponse<
+  A extends DynamoObject,
+  RV extends UpdateReturnValue
+> = RV extends 'ALL_NEW'
+  ? A
+  : RV extends 'ALL_OLD'
+  ? A
+  : RV extends 'NONE'
+  ? void
+  : Partial<A>;
+
+type SetResponse<
+  A extends DynamoObject,
+  RV extends UpdateReturnValue,
+  CE extends ConditionExpression<A> | never
+> = CE extends never
+  ? PartSetResponse<A, RV>
+  : PartSetResponse<A, RV> | 'ConditionalCheckFailed';
 
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
@@ -70,19 +93,14 @@ export type Table<
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
   readonly put: (a: A) => Promise<void>;
-  readonly set: <RV extends UpdateReturnValue = 'ALL_NEW'>(
+  readonly set: <
+    RV extends UpdateReturnValue = 'ALL_NEW',
+    CE extends ConditionExpression<A> | never = never
+  >(
     key: Pick<A, HK | RK>,
     updates: Partial<Omit<A, HK | RK>>,
-    opts?: SetOpts<A, RV>
-  ) => Promise<
-    RV extends 'ALL_NEW'
-      ? A
-      : RV extends 'ALL_OLD'
-      ? A
-      : RV extends 'NONE'
-      ? void
-      : Partial<A>
-  >;
+    opts?: SetOpts<A, RV, CE>
+  ) => Promise<SetResponse<A, RV, CE>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
@@ -377,7 +395,10 @@ export const Table = <
         )
         .catch((e) => {
           if (e.name === 'ConditionalCheckFailedException') {
-            return Promise.resolve(undefined);
+            return Promise.resolve(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              'ConditionalCheckFailed' as SetResponse<any, any, any>
+            );
           } else {
             return Promise.reject(e);
           }

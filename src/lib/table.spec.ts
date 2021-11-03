@@ -83,7 +83,7 @@ describe('Table', () => {
       const result2 = await simpleTable.set(key, setParams, {
         conditionExpression: { name: { '=': 'John' } },
       });
-      expect(result2).toEqual(undefined);
+      expect(result2).toEqual('ConditionalCheckFailed');
     });
     it('Should put and set and return nothing for requesting updated_old values when no old values are updated', async () => {
       const key = { hash: '1', name: 'Fred' };
