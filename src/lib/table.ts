@@ -99,7 +99,7 @@ export type Table<
   >(
     key: Pick<A, HK | RK>,
     updates: Partial<Omit<A, HK | RK>>,
-    opts?: SetOpts<A, RV, CE>
+    opts?: SetOpts<Omit<A, HK | RK>, RV, CE>
   ) => Promise<SetResponse<A, RV, CE>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
@@ -208,7 +208,7 @@ const query = (
   indexName?: string
 ) => (
   hkv: DynamoPrimitive,
-  opts?: QueryOpts<any, any, any>
+  opts?: QueryOpts<any, any, any, any>
 ): Promise<QueryResult<any, any>> => {
   const attributes = new ExpressionAttributes();
   const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(

@@ -18,8 +18,9 @@ export type ComparisonAlg<RKV> =
 
 export type QueryOpts<
   A extends DynamoObject,
+  HK extends string,
   RK extends string,
-  CE extends ConditionExpression<A> | never
+  CE extends ConditionExpression<Omit<A, HK | RK>> | never
 > = {
   readonly pageSize?: number;
   readonly sortKeyExpression?: ComparisonAlg<A[RK]>;
@@ -37,9 +38,9 @@ export type Queryable<
 > = {
   readonly query: <
     AA extends A = A,
-    CE extends ConditionExpression<AA> = never
+    CE extends ConditionExpression<Omit<AA, HK | RK>> = never
   >(
     hk: A[HK],
-    opts?: QueryOpts<AA, RK, CE>
+    opts?: QueryOpts<AA, HK, RK, CE>
   ) => Promise<QueryResult<AA, A[RK]>>;
 };
