@@ -24,7 +24,7 @@ type UpdateReturnValue =
   | 'ALL_NEW'
   | 'UPDATED_NEW';
 
-type ConditionExpression<A extends DynamoObject> = Partial<
+export type ConditionExpression<A extends DynamoObject> = Partial<
   {
     readonly [K in keyof A]: ComparisonAlg<A[K]>;
   }
@@ -92,7 +92,7 @@ export type Table<
   readonly transactGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
-  readonly put: (a: A) => Promise<void>;
+  readonly put: <AA extends A>(a: AA) => Promise<void>;
   readonly set: <
     RV extends UpdateReturnValue = 'ALL_NEW',
     CE extends ConditionExpression<A> | never = never
@@ -208,7 +208,7 @@ const query = (
   indexName?: string
 ) => (
   hkv: DynamoPrimitive,
-  opts?: QueryOpts<any, any>
+  opts?: QueryOpts<any, any, any>
 ): Promise<QueryResult<any, any>> => {
   const attributes = new ExpressionAttributes();
   const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(
@@ -222,6 +222,10 @@ const query = (
     opts?.fromSortKey &&
     rk &&
     Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey });
+
+  const filterExpression = opts?.filterExpression
+    ? serializeConditionExpression(opts.filterExpression, attributes)
+    : undefined;
   return dynamo
     .query({
       TableName: table,
@@ -232,6 +236,7 @@ const query = (
       ExpressionAttributeValues: attributes.values,
       ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
       ScanIndexForward: !(opts && opts.descending),
+      FilterExpression: filterExpression,
     })
     .promise()
     .then((r) => ({

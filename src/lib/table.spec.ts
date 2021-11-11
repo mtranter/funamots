@@ -265,13 +265,30 @@ describe('Table', () => {
       const results = await compoundTable.batchGet([key1, key2]);
       expect(results).toEqual([]);
     });
-    it.skip('Should transactionally put and batch get - dynalite does not support transact put', async () => {
+    it.skip('Should transactionally put and get', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };
       await compoundTable.transactPut([key1, key2]);
-      const results = await compoundTable.batchGet([key1, key2]);
+      const results = await compoundTable.transactGet([key1, key2]);
       expect(results).toContainEqual(key1);
       expect(results).toContainEqual(key2);
+    });
+
+    it('Should return subset of input array for batch get where only a subset exist', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '19', sort: 1 };
+      await compoundTable.put(key1);
+      const result = await compoundTable.batchGet([key1, key2]);
+      expect(result).toEqual([{ hash: '1', sort: 1, lsirange: 1 }]);
+    });
+    it('Should return subset of input array for transactGet where only a subset exist', async () => {
+      const key1 = { hash: '1', sort: 1, lsirange: 1 };
+      const key2 = { hash: '19', sort: 1 };
+      await compoundTable.put(key1);
+      const result = await compoundTable.batchGet([key1, key2], {
+        keys: ['lsirange'],
+      });
+      expect(result).toEqual([{ lsirange: 1 }]);
     });
     it('Should return empty array if batch get has no records', async () => {
       const key1 = { hash: '18', sort: 1 };
@@ -295,6 +312,27 @@ describe('Table', () => {
       });
       expect(result2.records).toEqual(testObjects.slice(10));
     });
+
+    it('Should put and query with a filter expression', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+        lsirange: i,
+      }));
+
+      await Promise.all(testObjects.map((t) => compoundTable.put(t)));
+      const result = await compoundTable.query('1', {
+        pageSize: 10,
+        filterExpression: { lsirange: { '=': 5 } },
+      });
+      expect(result.records.length).toBe(1);
+      expect(result.records[0]).toEqual({
+        hash: '1',
+        sort: 5,
+        lsirange: 5,
+      });
+    });
+
     it('Should put and query using begins_with', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',
@@ -320,6 +358,28 @@ describe('Table', () => {
       await compoundTable.batchPut(testObjects);
       const result = await compoundTable.indexes.ix_by_gsihash.query('hash');
       expect(result.records.length).toEqual(testObjects.length);
+    });
+    it('Should put and query a GSI and filter condition', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+        gsihash: 'hash',
+        gsirange: `${100 - i}`,
+        lsirange: 1,
+      }));
+
+      await compoundTable.batchPut(testObjects);
+      const result = await compoundTable.indexes.ix_by_gsihash.query('hash', {
+        filterExpression: { sort: { '=': 9 }, lsirange: { '=': 1 } },
+      });
+      expect(result.records.length).toEqual(1);
+      expect(result.records[0]).toEqual({
+        hash: '1',
+        sort: 9,
+        gsihash: 'hash',
+        gsirange: `91`,
+        lsirange: 1,
+      });
     });
     it('Should put and query a LSI', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
