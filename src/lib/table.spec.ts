@@ -399,6 +399,53 @@ describe('Table', () => {
         )
       );
     });
+    it('should transact write', async () => {
+      const testObjects = Array.from(Array(5).keys()).map((i) => ({
+        hash: 'Transact Write Test',
+        sort: i,
+        lsirange: 20 - i,
+        name: `Fred ${i}`,
+      }));
+      await compoundTable.batchPut(testObjects);
+      await compoundTable.transactWrite({
+        deletes: [
+          {
+            hash: 'Transact Write Test',
+            sort: 1,
+          },
+          {
+            hash: 'Transact Write Test',
+            sort: 2,
+          },
+        ],
+        puts: [
+          {
+            hash: 'Transact Write Test',
+            sort: 50,
+            lsirange: 80,
+            name: 'fdsdf',
+          },
+        ],
+        updates: [
+          {
+            key: {
+              hash: 'Transact Write Test',
+              sort: 4,
+            },
+            updates: {
+              lsirange: 500,
+            },
+          },
+        ],
+      });
+      const updateResults = await compoundTable.query('Transact Write Test');
+      expect(updateResults.records).toEqual([
+        { hash: 'Transact Write Test', lsirange: 20, name: 'Fred 0', sort: 0 },
+        { hash: 'Transact Write Test', lsirange: 17, name: 'Fred 3', sort: 3 },
+        { hash: 'Transact Write Test', lsirange: 500, name: 'Fred 4', sort: 4 },
+        { hash: 'Transact Write Test', lsirange: 80, name: 'fdsdf', sort: 50 },
+      ]);
+    });
 
     it('Should delete', async () => {
       const key = { hash: '1', sort: 1, lsirange: 1 };

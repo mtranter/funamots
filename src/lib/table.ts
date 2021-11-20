@@ -15,7 +15,12 @@ import {
   IndexDefinitions,
   TableDefinition,
 } from './table-builder';
-import { DynamoObject, DynamoPrimitive, DynamoValueKeys } from './types';
+import {
+  DynamoObject,
+  DynamoPrimitive,
+  DynamoValueKeys,
+  RequireAtLeastOne,
+} from './types';
 
 type UpdateReturnValue =
   | 'NONE'
@@ -109,7 +114,21 @@ export type Table<
   readonly transactDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
   ) => Promise<void>;
-  readonly transactWrite: (a: ReadonlyArray<A>) => Promise<void>;
+  readonly transactWrite: <AP extends A, AU extends A>(
+    args: RequireAtLeastOne<{
+      readonly puts: ReadonlyArray<AP>;
+      readonly deletes: ReadonlyArray<Pick<A, HK | RK>>;
+      readonly updates: ReadonlyArray<{
+        readonly key: Pick<A, HK | RK>;
+        readonly updates: Partial<Omit<AU, HK | RK>>;
+        readonly opts?: SetOpts<
+          Omit<A, HK | RK>,
+          never,
+          ConditionExpression<A>
+        >;
+      }>;
+    }>
+  ) => Promise<void>;
   readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
 
   readonly indexes: Indexes<Ixs>;
@@ -461,6 +480,52 @@ export const Table = <
         })
         .promise()
         .then(() => ({})),
+    transactWrite: (args) => {
+      const deletes = args.deletes.map((item) => ({
+        Delete: {
+          TableName: tableName,
+          Key: marshaller.marshallItem(extractKey(item, hashKey, sortKey)),
+        },
+      }));
+      const puts = args.puts.map((item) => ({
+        Put: {
+          TableName: tableName,
+          Item: marshaller.marshallItem(item),
+        },
+      }));
+      const updates = (args.updates || []).map((u) => {
+        const request = serializeSetAction(u.updates);
+        const attributes = new ExpressionAttributes();
+        const expression = request.serialize(attributes);
+        const key = marshaller.marshallItem(
+          extractKey(u.key, hashKey, sortKey)
+        );
+        const conditionExpression = u.opts?.conditionExpression
+          ? serializeConditionExpression(u.opts.conditionExpression, attributes)
+          : undefined;
+        return {
+          Update: {
+            Key: key,
+            UpdateExpression: expression,
+            ExpressionAttributeNames: attributes.names,
+            ExpressionAttributeValues: attributes.values,
+            ConditionExpression: conditionExpression,
+            TableName: tableName,
+          },
+        };
+      });
+      const TransactItems = [...deletes, ...puts, ...updates];
+      return dynamo
+        .transactWriteItems({
+          TransactItems,
+        })
+        .promise()
+        .catch((e) => {
+          console.log(JSON.stringify(e));
+          return Promise.reject(e);
+        })
+        .then(() => ({}));
+    },
     delete: (k) =>
       dynamo
         .deleteItem({
