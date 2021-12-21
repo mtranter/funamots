@@ -456,5 +456,11 @@ describe('Table', () => {
       const deleted = await compoundTable.get(key);
       expect(deleted).toBeNull();
     });
+    it('Should scan', async () => {
+      const key = { hash: 'scan test', sort: 1, lsirange: 1 };
+      await compoundTable.put(key);
+      const result = await compoundTable.scan();
+      expect(result.records).toContainEqual(key);
+    });
   });
 });

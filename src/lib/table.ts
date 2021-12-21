@@ -8,7 +8,13 @@ import {
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
-import { ComparisonAlg, Queryable, QueryOpts, QueryResult } from './queryable';
+import {
+  ComparisonAlg,
+  Queryable,
+  QueryOpts,
+  QueryResult,
+  ScanOpts,
+} from './queryable';
 import {
   DynamodbTableConfig,
   IndexDefinition,
@@ -266,6 +272,50 @@ const query = (
         marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
     }));
 };
+
+const scan = (
+  dynamo: DynamoDb,
+  table: string,
+  hk: string,
+  rk: string,
+  marshaller: Marshaller,
+  indexName?: string
+) => (opts?: ScanOpts<any, any, any, any>): Promise<QueryResult<any, any>> => {
+  const attributes = new ExpressionAttributes();
+
+  const lastKey =
+    opts?.fromSortKey &&
+    rk &&
+    Object.assign({}, { [hk]: opts.fromHashKey }, { [rk]: opts.fromSortKey });
+
+  const filterExpression = opts?.filterExpression
+    ? serializeConditionExpression(opts.filterExpression, attributes)
+    : undefined;
+  return dynamo
+    .scan({
+      TableName: table,
+      Limit: opts?.pageSize,
+      IndexName: indexName,
+      ExpressionAttributeNames:
+        Object.keys(attributes.names).length > 0 ? attributes.names : undefined,
+      ExpressionAttributeValues:
+        Object.keys(attributes.values).length > 0
+          ? attributes.values
+          : undefined,
+      ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+      FilterExpression: filterExpression,
+    })
+    .promise()
+    .then((r) => ({
+      records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
+      lastHashKey:
+        r.LastEvaluatedKey && marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
+      lastSortKey:
+        r.LastEvaluatedKey &&
+        rk &&
+        marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
+    }));
+};
 /* eslint-enable */
 
 export type TableConfig<
@@ -390,6 +440,7 @@ export const Table = <
           ).filter((i) => i != undefined)
         ),
     query: query(dynamo, tableName, hashKey, sortKey, marshaller),
+    scan: scan(dynamo, tableName, hashKey, sortKey, marshaller),
     put: (a) =>
       dynamo
         .putItem({ TableName: tableName, Item: marshall(a) })
@@ -540,6 +591,14 @@ export const Table = <
         ...{
           [k]: {
             query: query(
+              dynamo,
+              tableName,
+              indexes[k].partitionKey,
+              indexes[k].sortKey,
+              marshaller,
+              indexes[k].name
+            ),
+            scan: scan(
               dynamo,
               tableName,
               indexes[k].partitionKey,
