@@ -4,13 +4,13 @@ import { DynamoObject } from './types';
 
 export type QueryResult<A, K> = {
   readonly records: readonly A[];
-  readonly lastSortKey: K;
+  readonly lastSortKey?: K;
 };
 
 export type ScanResult<A, H, K> = {
   readonly records: readonly A[];
-  readonly lastHashKey: H;
-  readonly lastSortKey: K;
+  readonly lastHashKey?: H;
+  readonly lastSortKey?: K;
 };
 
 export type ComparisonAlg<RKV> =
