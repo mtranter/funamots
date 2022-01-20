@@ -80,10 +80,10 @@ describe('Table', () => {
       const key = { hash: '1', name: 'Fred' };
       await simpleTable.put(key);
       const setParams = { name: 'Johnny', age: 30 };
-      const result2 = await simpleTable.set(key, setParams, {
+      const result2 = simpleTable.set(key, setParams, {
         conditionExpression: { name: { '=': 'John' } },
       });
-      expect(result2).toEqual('ConditionalCheckFailed');
+      expect(result2).rejects.toBeTruthy();
     });
     it('Should put and set and return nothing for requesting updated_old values when no old values are updated', async () => {
       const key = { hash: '1', name: 'Fred' };
@@ -156,6 +156,31 @@ describe('Table', () => {
       const deleted = await simpleTable.get(key);
       expect(deleted).toBeNull();
     });
+    it('Should not put when condition not met', async () => {
+      const key = { hash: '1', age: 30 };
+      await simpleTable.put(key);
+      const result = await simpleTable.get(key);
+      expect(result).toEqual(key);
+      const badPutResult = simpleTable.put(
+        { hash: '1', age: 27 },
+        { conditionExpression: { age: { '=': 27 } } }
+      );
+      expect(badPutResult).rejects.toBeTruthy();
+      const result3 = await simpleTable.get(key);
+      expect(result3).toEqual(key);
+    });
+    it('Should put when condition not met', async () => {
+      const key = { hash: '27', age: 30 };
+      await simpleTable.put(key);
+      const result = await simpleTable.get(key);
+      expect(result).toEqual(key);
+      await simpleTable.put(
+        { hash: '27', age: 27 },
+        { conditionExpression: { age: { '=': 30 } } }
+      );
+      const result3 = await simpleTable.get(key);
+      expect(result3).toEqual({ hash: '27', age: 27 });
+    });
     it('Should put and get super types of the key', async () => {
       const person = { hash: 'PERSON_1', dob: Date.now(), name: 'Fred' };
       const job = { hash: 'JOB_1', startDate: Date.now(), name: 'Developer' };
@@ -173,7 +198,7 @@ describe('Table', () => {
       readonly sort: number;
       readonly gsihash?: string;
       readonly gsirange?: string;
-      readonly lsirange: number;
+      readonly lsirange?: number;
     };
 
     const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
@@ -303,7 +328,7 @@ describe('Table', () => {
         sort: i,
       }));
 
-      await Promise.all(testObjects.map(compoundTable.put));
+      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
       const result = await compoundTable.query('1', { pageSize: 10 });
       expect(result.records).toEqual(testObjects.slice(0, 10));
       const result2 = await compoundTable.query('1', {
@@ -315,19 +340,19 @@ describe('Table', () => {
 
     it('Should put and query with a filter expression', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
-        hash: '1',
+        hash: '1234',
         sort: i,
         lsirange: i,
       }));
 
       await Promise.all(testObjects.map((t) => compoundTable.put(t)));
-      const result = await compoundTable.query('1', {
+      const result = await compoundTable.query('1234', {
         pageSize: 10,
         filterExpression: { lsirange: { '=': 5 } },
       });
       expect(result.records.length).toBe(1);
       expect(result.records[0]).toEqual({
-        hash: '1',
+        hash: '1234',
         sort: 5,
         lsirange: 5,
       });
@@ -335,12 +360,12 @@ describe('Table', () => {
 
     it('Should put and query using begins_with', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
-        hash: '1',
+        hash: '111',
         sort: i,
       }));
 
-      await Promise.all(testObjects.map(compoundTable.put));
-      const result = await compoundTable.query('1', {
+      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
+      const result = await compoundTable.query('111', {
         pageSize: 10,
         sortKeyExpression: { '>': 15 },
       });
@@ -448,7 +473,7 @@ describe('Table', () => {
     });
 
     it('Should delete', async () => {
-      const key = { hash: '1', sort: 1, lsirange: 1 };
+      const key = { hash: '222', sort: 1, lsirange: 1 };
       await compoundTable.put(key);
       const result = await compoundTable.get(key);
       expect(result).toEqual(key);

@@ -50,6 +50,13 @@ type SetOpts<
   readonly conditionExpression?: CE;
 };
 
+type PutOpts<
+  A extends DynamoObject,
+  CE extends ConditionExpression<A> | never
+> = {
+  readonly conditionExpression?: CE;
+};
+
 const serializeConditionExpression = <A extends DynamoObject>(
   ce: ConditionExpression<A>,
   ea: ExpressionAttributes
@@ -72,11 +79,8 @@ type PartSetResponse<
 
 type SetResponse<
   A extends DynamoObject,
-  RV extends UpdateReturnValue,
-  CE extends ConditionExpression<A> | never
-> = CE extends never
-  ? PartSetResponse<A, RV>
-  : PartSetResponse<A, RV> | 'ConditionalCheckFailed';
+  RV extends UpdateReturnValue
+> = PartSetResponse<A, RV>;
 
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
@@ -103,15 +107,21 @@ export type Table<
   readonly transactGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
-  readonly put: <AA extends A>(a: AA) => Promise<void>;
+  readonly put: <
+    AA extends A,
+    CE extends ConditionExpression<AA> | never = never
+  >(
+    a: AA,
+    opts?: PutOpts<AA, CE>
+  ) => Promise<void>;
   readonly set: <
-    RV extends UpdateReturnValue = 'ALL_NEW',
+    RV extends UpdateReturnValue = 'NONE',
     CE extends ConditionExpression<A> | never = never
   >(
     key: Pick<A, HK | RK>,
     updates: Partial<Omit<A, HK | RK>>,
     opts?: SetOpts<Omit<A, HK | RK>, RV, CE>
-  ) => Promise<SetResponse<A, RV, CE>>;
+  ) => Promise<SetResponse<A, RV>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
@@ -370,19 +380,20 @@ export const Table = <
         ea.addName(n.toString());
         return ea;
       }, new ExpressionAttributes());
+      const req = {
+        TableName: tableDefintion.name,
+        Key: marshaller.marshallItem(
+          extractKey(hkv, tableDefintion.partitionKey, sortKey)
+        ),
+        ConsistentRead: opts?.consistentRead,
+        ProjectionExpression:
+          projectionExpression &&
+          Object.keys(projectionExpression.names).join(', '),
+        ExpressionAttributeNames:
+          projectionExpression && projectionExpression.names,
+      };
       return dynamo
-        .getItem({
-          TableName: tableDefintion.name,
-          Key: marshaller.marshallItem(
-            extractKey(hkv, tableDefintion.partitionKey, sortKey)
-          ),
-          ConsistentRead: opts?.consistentRead,
-          ProjectionExpression:
-            projectionExpression &&
-            Object.keys(projectionExpression.names).join(', '),
-          ExpressionAttributeNames:
-            projectionExpression && projectionExpression.names,
-        })
+        .getItem(req)
         .promise()
         .then((r) =>
           r.Item
@@ -441,11 +452,24 @@ export const Table = <
         ),
     query: query(dynamo, tableName, hashKey, sortKey, marshaller),
     scan: scan(dynamo, tableName, hashKey, sortKey, marshaller),
-    put: (a) =>
-      dynamo
-        .putItem({ TableName: tableName, Item: marshall(a) })
+    put: (a, opts) => {
+      const attributes = new ExpressionAttributes();
+      const conditionExpression = opts?.conditionExpression
+        ? serializeConditionExpression(opts.conditionExpression, attributes)
+        : undefined;
+      return dynamo
+        .putItem({
+          TableName: tableName,
+          Item: marshall(a),
+          ExpressionAttributeNames: conditionExpression && attributes.names,
+          ExpressionAttributeValues: conditionExpression && attributes.values,
+          ConditionExpression: conditionExpression,
+        })
         .promise()
-        .then(() => ({})),
+        .then((i) =>
+          i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
+        );
+    },
     set: (k, v, opts) => {
       const request = serializeSetAction(v);
       const attributes = new ExpressionAttributes();
@@ -467,17 +491,7 @@ export const Table = <
         .promise()
         .then((i) =>
           i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
-        )
-        .catch((e) => {
-          if (e.name === 'ConditionalCheckFailedException') {
-            return Promise.resolve(
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              'ConditionalCheckFailed' as SetResponse<any, any, any>
-            );
-          } else {
-            return Promise.reject(e);
-          }
-        });
+        );
     },
     batchPut: (a) =>
       dynamo
