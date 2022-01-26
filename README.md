@@ -88,7 +88,7 @@ const testObjects = Array.from(Array(20).keys()).map((i) => ({
   lsirange: 1,
 }));
 
-await compoundTable.batchPut(testObjects);
+await compoundTable.transactPut((doc) => { return { item: doc } }));
 const result = await compoundTable.indexes.ix_by_gsihash.query('hash value');
 expect(result.records.length).toEqual(testObjects.length);
 
@@ -112,6 +112,7 @@ type Order = {
   readonly customerId: string;
   readonly products: string[];
   readonly totalPrice: number;
+  readonly documentVersion: string;
 };
 
 const OrdersRepo = (client: DynamoDB) => {
@@ -121,6 +122,7 @@ const OrdersRepo = (client: DynamoDB) => {
     readonly customerIxHash: string;
     readonly dateSort: string;
     readonly dailyOrdersIxHash: string;
+    readonly documentVersion?: string;
     readonly order: Order;
   };
 
@@ -141,11 +143,22 @@ const OrdersRepo = (client: DynamoDB) => {
     customerIxHash: o.customerId,
     dateSort: `${o.orderDate}:${o.orderId}`,
     dailyOrdersIxHash: dateToDay(o.orderDate),
+    documentVersion: o.documentVersion || uuid(),
     order: o,
   });
 
   return {
-    saveOrder: (o: Order) => table.put(mapToDto(o)),
+    saveOrder: (o: Order) =>
+      table.put(mapToDto(o), {
+        conditionExpression: OR<CompoundKey>(
+          {
+            documentVersionId: attributeNotExists(),
+          },
+          {
+            documentVersionId: { '=': o.documentVersion },
+          }
+        ),
+      }),
     getOrder: (orderId: string) =>
       table.get({ hash: orderId, range: 'ORDER' }).then((r) => r?.order),
     getCustomerOrdersSince: (customerId: string, sinceIsoDate: string) =>

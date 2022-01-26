@@ -1,5 +1,7 @@
+import { ExpressionAttributes } from '@aws/dynamodb-expressions';
+
+import { ConditionExpression } from './conditions';
 import { DynamoMarshallerFor } from './marshalling';
-import { ConditionExpression } from './table';
 import { DynamoObject } from './types';
 
 export type QueryResult<A, K> = {
@@ -13,14 +15,35 @@ export type ScanResult<A, H, K> = {
   readonly lastSortKey?: K;
 };
 
-export type ComparisonAlg<RKV> =
+export type SortKeyCompare<RKV> =
   | Record<'=', RKV>
   | Record<'<', RKV>
   | Record<'<=', RKV>
   | Record<'>', RKV>
   | Record<'>=', RKV>
   | Record<'begins_with', RKV>
-  | Record<'BETWEEN', { readonly lower: RKV; readonly upper: RKV }>;
+  | Record<'between', { readonly lower: RKV; readonly upper: RKV }>;
+
+const isBetweenOp = <V>(
+  skc: SortKeyCompare<V>
+): skc is Record<'between', { readonly lower: V; readonly upper: V }> =>
+  Object.keys(skc)[0] === 'between';
+
+export const serializeKeyComparison = <V>(
+  attributes: ExpressionAttributes,
+  keyName: string,
+  exp: SortKeyCompare<V>
+) => {
+  if (isBetweenOp(exp)) {
+    return `${attributes.addName(keyName)} between ${attributes.addValue(
+      exp.between.lower
+    )} and ${attributes.addValue(exp.between.upper)}`;
+  } else {
+    return `${attributes.addName(keyName)} ${
+      Object.keys(exp)[0]
+    } ${attributes.addValue(Object.values(exp)[0])}`;
+  }
+};
 
 export type QueryOpts<
   A extends DynamoObject,
@@ -29,7 +52,7 @@ export type QueryOpts<
   CE extends ConditionExpression<Omit<A, HK | RK>> | never
 > = {
   readonly pageSize?: number;
-  readonly sortKeyExpression?: ComparisonAlg<A[RK]>;
+  readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;
@@ -44,7 +67,7 @@ export type ScanOpts<
   CE extends ConditionExpression<Omit<A, HK | RK>> | never
 > = {
   readonly pageSize?: number;
-  readonly sortKeyExpression?: ComparisonAlg<A[RK]>;
+  readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
   readonly fromHashKey?: A[HK];
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
@@ -64,7 +87,7 @@ export type Queryable<
     hk: A[HK],
     opts?: QueryOpts<AA, HK, RK, CE>
   ) => Promise<QueryResult<AA, A[RK]>>;
-  readonly scan: <CE extends ConditionExpression<Omit<A, HK | RK>> = never>(
+  readonly scan: <CE extends ConditionExpression<A> = never>(
     opts?: ScanOpts<A, HK, RK, CE>
   ) => Promise<ScanResult<A, A[HK], A[RK]>>;
 };

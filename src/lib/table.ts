@@ -7,13 +7,17 @@ import {
 } from '@aws/dynamodb-expressions';
 import DynamoDb from 'aws-sdk/clients/dynamodb';
 
+import {
+  ConditionExpression,
+  serializeConditionExpression,
+} from './conditions';
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
 import {
-  ComparisonAlg,
   Queryable,
   QueryOpts,
   QueryResult,
   ScanOpts,
+  serializeKeyComparison,
 } from './queryable';
 import {
   DynamodbTableConfig,
@@ -35,12 +39,6 @@ type UpdateReturnValue =
   | 'ALL_NEW'
   | 'UPDATED_NEW';
 
-export type ConditionExpression<A extends DynamoObject> = Partial<
-  {
-    readonly [K in keyof A]: ComparisonAlg<A[K]>;
-  }
->;
-
 type SetOpts<
   A extends DynamoObject,
   RV extends UpdateReturnValue,
@@ -55,15 +53,6 @@ type PutOpts<
   CE extends ConditionExpression<A> | never
 > = {
   readonly conditionExpression?: CE;
-};
-
-const serializeConditionExpression = <A extends DynamoObject>(
-  ce: ConditionExpression<A>,
-  ea: ExpressionAttributes
-): string => {
-  return Object.keys(ce)
-    .map((e) => serializeComparisonAlg(ea, e, ce[e]))
-    .join(' AND ');
 };
 
 type PartSetResponse<
@@ -81,6 +70,11 @@ type SetResponse<
   A extends DynamoObject,
   RV extends UpdateReturnValue
 > = PartSetResponse<A, RV>;
+
+type TransactWriteItem<I, CE> = {
+  readonly item: I;
+  readonly conditionExpression?: ConditionExpression<CE>;
+};
 
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
@@ -126,22 +120,20 @@ export type Table<
   readonly batchDelete: (
     keys: ReadonlyArray<Pick<A, HK | RK>>
   ) => Promise<void>;
-  readonly transactPut: (a: ReadonlyArray<A>) => Promise<void>;
-  readonly transactDelete: (
-    keys: ReadonlyArray<Pick<A, HK | RK>>
+  readonly transactPut: (
+    a: ReadonlyArray<TransactWriteItem<A, A>>
   ) => Promise<void>;
-  readonly transactWrite: <AP extends A, AU extends A>(
+  readonly transactDelete: (
+    keys: ReadonlyArray<TransactWriteItem<Pick<A, HK | RK>, A>>
+  ) => Promise<void>;
+  readonly transactWrite: (
     args: RequireAtLeastOne<{
-      readonly puts: ReadonlyArray<AP>;
-      readonly deletes: ReadonlyArray<Pick<A, HK | RK>>;
+      readonly puts: ReadonlyArray<TransactWriteItem<A, A>>;
+      readonly deletes: ReadonlyArray<TransactWriteItem<Pick<A, HK | RK>, A>>;
       readonly updates: ReadonlyArray<{
         readonly key: Pick<A, HK | RK>;
-        readonly updates: Partial<Omit<AU, HK | RK>>;
-        readonly opts?: SetOpts<
-          Omit<A, HK | RK>,
-          never,
-          ConditionExpression<A>
-        >;
+        readonly updates: Partial<Omit<A, HK | RK>>;
+        readonly conditionExpression?: ConditionExpression<A>;
       }>;
     }>
   ) => Promise<void>;
@@ -206,33 +198,6 @@ const serializeSetAction = (
     return p;
   }, ue);
 
-const isBeginsWithOp = <RKV>(
-  op: ComparisonAlg<RKV>
-): op is Extract<ComparisonAlg<RKV>, { readonly begins_with: RKV }> =>
-  Object.keys(op)[0] === 'begins_with';
-
-const isBetweenOp = <RKV>(
-  op: ComparisonAlg<RKV>
-): op is Extract<
-  ComparisonAlg<RKV>,
-  { readonly BETWEEN: { readonly lower: RKV; readonly upper: RKV } }
-> => Object.keys(op)[0] === 'BETWEEN';
-
-const serializeComparisonAlg = <RKV>(
-  attrs: ExpressionAttributes,
-  rk: string,
-  op: ComparisonAlg<RKV>
-): string =>
-  isBetweenOp(op)
-    ? `${attrs.addName(rk)} BETWEEN ${attrs.addValue(
-        op.BETWEEN.lower
-      )} AND ${attrs.addValue(op.BETWEEN.upper)}`
-    : isBeginsWithOp(op)
-    ? `begins_with(${attrs.addName(rk)}, ${attrs.addValue(op.begins_with)})`
-    : `${attrs.addName(rk)} ${Object.keys(op)[0]} ${attrs.addValue(
-        Object.values(op)[0]
-      )}`;
-
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 const query = (
   dynamo: DynamoDb,
@@ -250,7 +215,7 @@ const query = (
     hkv
   )}${
     opts?.sortKeyExpression
-      ? ` and ${serializeComparisonAlg(attributes, rk, opts.sortKeyExpression)}`
+      ? ` and ${serializeKeyComparison(attributes, rk, opts.sortKeyExpression)}`
       : ''
   }`;
   const lastKey =
@@ -522,42 +487,42 @@ export const Table = <
         .promise()
         .then(() => ({})),
     transactPut: (a) =>
-      dynamo
-        .transactWriteItems({
-          TransactItems: a.map((item) => ({
-            Put: {
-              TableName: tableName,
-              Item: marshaller.marshallItem(item),
-            },
-          })),
-        })
-        .promise()
-        .then(() => ({})),
+      Table(tableDefintion, config).transactWrite({ puts: a }),
     transactDelete: (a) =>
-      dynamo
-        .transactWriteItems({
-          TransactItems: a.map((item) => ({
-            Delete: {
-              TableName: tableName,
-              Key: marshaller.marshallItem(extractKey(item, hashKey, sortKey)),
-            },
-          })),
-        })
-        .promise()
-        .then(() => ({})),
+      Table(tableDefintion, config).transactWrite({ deletes: a }),
     transactWrite: (args) => {
-      const deletes = args.deletes.map((item) => ({
-        Delete: {
-          TableName: tableName,
-          Key: marshaller.marshallItem(extractKey(item, hashKey, sortKey)),
-        },
-      }));
-      const puts = args.puts.map((item) => ({
-        Put: {
-          TableName: tableName,
-          Item: marshaller.marshallItem(item),
-        },
-      }));
+      const deletes = (args.deletes || []).map((item) => {
+        const attributes = new ExpressionAttributes();
+        const conditionExpression = item.conditionExpression
+          ? serializeConditionExpression(item.conditionExpression, attributes)
+          : undefined;
+        return {
+          Delete: {
+            TableName: tableName,
+            Key: marshaller.marshallItem(
+              extractKey(item.item, hashKey, sortKey)
+            ),
+            ConditionExpression: conditionExpression,
+            ExpressionAttributeNames: conditionExpression && attributes.names,
+            ExpressionAttributeValues: conditionExpression && attributes.values,
+          },
+        };
+      });
+      const puts = (args.puts || []).map((item) => {
+        const attributes = new ExpressionAttributes();
+        const conditionExpression = item.conditionExpression
+          ? serializeConditionExpression(item.conditionExpression, attributes)
+          : undefined;
+        return {
+          Put: {
+            TableName: tableName,
+            Item: marshaller.marshallItem(item.item),
+            ConditionExpression: conditionExpression,
+            ExpressionAttributeNames: conditionExpression && attributes.names,
+            ExpressionAttributeValues: conditionExpression && attributes.values,
+          },
+        };
+      });
       const updates = (args.updates || []).map((u) => {
         const request = serializeSetAction(u.updates);
         const attributes = new ExpressionAttributes();
@@ -565,8 +530,8 @@ export const Table = <
         const key = marshaller.marshallItem(
           extractKey(u.key, hashKey, sortKey)
         );
-        const conditionExpression = u.opts?.conditionExpression
-          ? serializeConditionExpression(u.opts.conditionExpression, attributes)
+        const conditionExpression = u.conditionExpression
+          ? serializeConditionExpression(u.conditionExpression, attributes)
           : undefined;
         return {
           Update: {
@@ -585,10 +550,6 @@ export const Table = <
           TransactItems,
         })
         .promise()
-        .catch((e) => {
-          console.log(JSON.stringify(e));
-          return Promise.reject(e);
-        })
         .then(() => ({}));
     },
     delete: (k) =>

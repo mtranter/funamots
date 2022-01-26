@@ -1,5 +1,14 @@
 import { DynamoDB } from 'aws-sdk';
 
+import {
+  AND,
+  attributeNotExists,
+  beginsWith,
+  between,
+  isIn,
+  NOT,
+  OR,
+} from './conditions';
 import { Marshallers } from './marshalling';
 import { tableBuilder } from './table-builder';
 
@@ -199,6 +208,8 @@ describe('Table', () => {
       readonly gsihash?: string;
       readonly gsirange?: string;
       readonly lsirange?: number;
+      readonly name?: string;
+      readonly documentVersionId?: string;
     };
 
     const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
@@ -268,7 +279,7 @@ describe('Table', () => {
     it('Should transact put and get', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };
-      await compoundTable.transactPut([key1, key2]);
+      await compoundTable.transactPut([{ item: key1 }, { item: key2 }]);
       const results = await compoundTable.transactGet([key1, key2]);
       expect(results).toContainEqual(key1);
       expect(results).toContainEqual(key2);
@@ -285,15 +296,15 @@ describe('Table', () => {
     it('Should transact put and delete', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };
-      await compoundTable.transactPut([key1, key2]);
-      await compoundTable.transactDelete([key1, key2]);
+      await compoundTable.transactPut([{ item: key1 }, { item: key2 }]);
+      await compoundTable.transactDelete([{ item: key1 }, { item: key2 }]);
       const results = await compoundTable.batchGet([key1, key2]);
       expect(results).toEqual([]);
     });
     it.skip('Should transactionally put and get', async () => {
       const key1 = { hash: '1', sort: 1, lsirange: 1 };
       const key2 = { hash: '2', sort: 1, lsirange: 2 };
-      await compoundTable.transactPut([key1, key2]);
+      await compoundTable.transactPut([{ item: key1 }, { item: key2 }]);
       const results = await compoundTable.transactGet([key1, key2]);
       expect(results).toContainEqual(key1);
       expect(results).toContainEqual(key2);
@@ -338,6 +349,22 @@ describe('Table', () => {
       expect(result2.records).toEqual(testObjects.slice(10));
     });
 
+    it('Should put and query with sort key expression', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+      }));
+
+      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
+      const result = await compoundTable.query('1', {
+        pageSize: 10,
+        sortKeyExpression: { between: { lower: 1, upper: 5 } },
+      });
+      expect(result.records).toEqual(
+        testObjects.filter((r) => 1 <= r.sort && r.sort <= 5)
+      );
+    });
+
     it('Should put and query with a filter expression', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1234',
@@ -345,7 +372,7 @@ describe('Table', () => {
         lsirange: i,
       }));
 
-      await Promise.all(testObjects.map((t) => compoundTable.put(t)));
+      await compoundTable.transactPut(testObjects.map((item) => ({ item })));
       const result = await compoundTable.query('1234', {
         pageSize: 10,
         filterExpression: { lsirange: { '=': 5 } },
@@ -358,13 +385,59 @@ describe('Table', () => {
       });
     });
 
-    it('Should put and query using begins_with', async () => {
+    it('Should put and query with a complex filter expression', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1234',
+        sort: i,
+        lsirange: i,
+        name: i % 2 === 0 ? 'Fred' : 'Bob',
+      }));
+
+      await compoundTable.transactPut(testObjects.map((item) => ({ item })));
+      const result = await compoundTable.query('1234', {
+        filterExpression: AND<CompoundKey>(
+          OR<CompoundKey>(
+            {
+              lsirange: { '=': 5 },
+              name: beginsWith('Fre'),
+            },
+            NOT<CompoundKey>({ lsirange: between(7, 13) })
+          ),
+          { name: isIn(['Fred', 'John', 'Mike']) }
+        ),
+      });
+      expect(result.records.length).toBe(11);
+      expect(
+        result.records.every(
+          (r) =>
+            r.lsirange === 5 ||
+            r.name === 'Fred' ||
+            !(7 > r.lsirange && r.lsirange > 13)
+        )
+      );
+    });
+
+    it('Should put and query using greater than', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '111',
         sort: i,
+        documentVersionId: '1',
       }));
 
-      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
+      await Promise.all(
+        testObjects.map((o) =>
+          compoundTable.put(o, {
+            conditionExpression: OR<CompoundKey>(
+              {
+                documentVersionId: attributeNotExists(),
+              },
+              {
+                documentVersionId: { '=': o.documentVersionId },
+              }
+            ),
+          })
+        )
+      );
       const result = await compoundTable.query('111', {
         pageSize: 10,
         sortKeyExpression: { '>': 15 },
@@ -435,20 +508,26 @@ describe('Table', () => {
       await compoundTable.transactWrite({
         deletes: [
           {
-            hash: 'Transact Write Test',
-            sort: 1,
+            item: {
+              hash: 'Transact Write Test',
+              sort: 1,
+            },
           },
           {
-            hash: 'Transact Write Test',
-            sort: 2,
+            item: {
+              hash: 'Transact Write Test',
+              sort: 2,
+            },
           },
         ],
         puts: [
           {
-            hash: 'Transact Write Test',
-            sort: 50,
-            lsirange: 80,
-            name: 'fdsdf',
+            item: {
+              hash: 'Transact Write Test',
+              sort: 50,
+              lsirange: 80,
+              name: 'fdsdf',
+            },
           },
         ],
         updates: [
@@ -486,6 +565,43 @@ describe('Table', () => {
       await compoundTable.put(key);
       const result = await compoundTable.scan();
       expect(result.records).toContainEqual(key);
+    });
+    it('Should scan with paging', async () => {
+      const records = Array.from(Array(20).keys()).map((i) => ({
+        hash: 'scan test paging',
+        sort: i,
+        lsirange: i,
+      }));
+
+      await compoundTable.transactPut(records.map((item) => ({ item })));
+      const result = await compoundTable.scan({
+        pageSize: 5,
+      });
+      expect(result.records.length).toEqual(5);
+      expect(result.lastSortKey).toBeTruthy();
+      expect(result.lastHashKey).toBeTruthy();
+      const result2 = await compoundTable.scan({
+        fromHashKey: result.lastHashKey,
+        fromSortKey: result.lastSortKey,
+      });
+      expect(result2.records.length).toBeGreaterThanOrEqual(15);
+      expect(result2.records).toEqual(
+        // eslint-disable-next-line functional/prefer-readonly-type
+        expect.not.arrayContaining(result.records as CompoundKey[])
+      );
+    });
+    it('Should scan with filtering', async () => {
+      const records = Array.from(Array(20).keys()).map((i) => ({
+        hash: 'scan test paging',
+        sort: i,
+        lsirange: i,
+      }));
+
+      await compoundTable.transactPut(records.map((item) => ({ item })));
+      const result = await compoundTable.scan({
+        filterExpression: { hash: { '=': 'scan test paging' } },
+      });
+      expect(result.records.length).toEqual(20);
     });
   });
 });
