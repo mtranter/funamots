@@ -358,7 +358,7 @@ describe('Table', () => {
       await Promise.all(testObjects.map((o) => compoundTable.put(o)));
       const result = await compoundTable.query('1', {
         pageSize: 10,
-        sortKeyExpression: { between: { lower: 1, upper: 5 } },
+        sortKeyExpression: between(1, 5),
       });
       expect(result.records).toEqual(
         testObjects.filter((r) => 1 <= r.sort && r.sort <= 5)

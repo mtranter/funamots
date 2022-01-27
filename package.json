@@ -1,9 +1,9 @@
 {
   "name": "funamots",
-  "version": "2.0.0-beta",
+  "version": "2.0.0-rc2",
   "description": "Functional typescript DynamoDB Client",
-  "main": "index.js",
-  "typings": "index.d.ts",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
   "repository": "https://github.com/mtranter/funamots",
   "license": "MIT",
   "keywords": [],

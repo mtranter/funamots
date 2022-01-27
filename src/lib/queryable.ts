@@ -1,6 +1,10 @@
 import { ExpressionAttributes } from '@aws/dynamodb-expressions';
 
-import { ConditionExpression } from './conditions';
+import {
+  Comparator,
+  ComparisonFunction,
+  ConditionExpression,
+} from './conditions';
 import { DynamoMarshallerFor } from './marshalling';
 import { DynamoObject } from './types';
 
@@ -16,34 +20,11 @@ export type ScanResult<A, H, K> = {
 };
 
 export type SortKeyCompare<RKV> =
-  | Record<'=', RKV>
-  | Record<'<', RKV>
-  | Record<'<=', RKV>
-  | Record<'>', RKV>
-  | Record<'>=', RKV>
-  | Record<'begins_with', RKV>
-  | Record<'between', { readonly lower: RKV; readonly upper: RKV }>;
-
-const isBetweenOp = <V>(
-  skc: SortKeyCompare<V>
-): skc is Record<'between', { readonly lower: V; readonly upper: V }> =>
-  Object.keys(skc)[0] === 'between';
-
-export const serializeKeyComparison = <V>(
-  attributes: ExpressionAttributes,
-  keyName: string,
-  exp: SortKeyCompare<V>
-) => {
-  if (isBetweenOp(exp)) {
-    return `${attributes.addName(keyName)} between ${attributes.addValue(
-      exp.between.lower
-    )} and ${attributes.addValue(exp.between.upper)}`;
-  } else {
-    return `${attributes.addName(keyName)} ${
-      Object.keys(exp)[0]
-    } ${attributes.addValue(Object.values(exp)[0])}`;
-  }
-};
+  | Exclude<Comparator<RKV>, { readonly '<>': RKV }>
+  | Extract<
+      ComparisonFunction<RKV>,
+      { readonly function: 'begins_with' } | { readonly function: 'between' }
+    >;
 
 export type QueryOpts<
   A extends DynamoObject,

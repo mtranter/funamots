@@ -12,13 +12,7 @@ import {
   serializeConditionExpression,
 } from './conditions';
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
-import {
-  Queryable,
-  QueryOpts,
-  QueryResult,
-  ScanOpts,
-  serializeKeyComparison,
-} from './queryable';
+import { Queryable, QueryOpts, QueryResult, ScanOpts } from './queryable';
 import {
   DynamodbTableConfig,
   IndexDefinition,
@@ -215,7 +209,12 @@ const query = (
     hkv
   )}${
     opts?.sortKeyExpression
-      ? ` and ${serializeKeyComparison(attributes, rk, opts.sortKeyExpression)}`
+      ? ` and ${serializeConditionExpression(
+          {
+            [rk]: opts.sortKeyExpression,
+          },
+          attributes
+        )}`
       : ''
   }`;
   const lastKey =

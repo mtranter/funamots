@@ -89,7 +89,7 @@ export const OR = <A>(
 });
 
 type AttributeType = keyof AttributeValue;
-type ComparisonFunction<V> =
+export type ComparisonFunction<V> =
   | { readonly __type: 'function'; readonly function: 'attribute_exists' }
   | { readonly __type: 'function'; readonly function: 'attribute_not_exists' }
   | {
@@ -142,7 +142,9 @@ export const attributeType = <V>(v: AttributeType): ComparisonFunction<V> => ({
   function: 'attribute_type',
   arg: v,
 });
-export const beginsWith = <V>(v: string): ComparisonFunction<V> => ({
+export const beginsWith = <V>(
+  v: string
+): Extract<ComparisonFunction<V>, { readonly function: 'begins_with' }> => ({
   __type: 'function',
   function: 'begins_with',
   arg: v,
@@ -152,7 +154,10 @@ export const contains = <V>(v: string): ComparisonFunction<V> => ({
   function: 'contains',
   arg: v,
 });
-export const between = <V>(lower: V, upper: V): ComparisonFunction<V> => ({
+export const between = <V>(
+  lower: V,
+  upper: V
+): Extract<ComparisonFunction<V>, { readonly function: 'between' }> => ({
   __type: 'function',
   function: 'between',
   lower,
