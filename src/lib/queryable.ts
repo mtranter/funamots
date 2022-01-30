@@ -1,5 +1,3 @@
-import { ExpressionAttributes } from '@aws/dynamodb-expressions';
-
 import {
   Comparator,
   ComparisonFunction,
@@ -44,8 +42,7 @@ export type QueryOpts<
 export type ScanOpts<
   A extends DynamoObject,
   HK extends string,
-  RK extends string,
-  CE extends ConditionExpression<Omit<A, HK | RK>> | never
+  RK extends string
 > = {
   readonly pageSize?: number;
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
@@ -53,7 +50,7 @@ export type ScanOpts<
   readonly fromSortKey?: A[RK];
   readonly schema?: DynamoMarshallerFor<A>;
   readonly consistentRead?: boolean;
-  readonly filterExpression?: CE;
+  readonly filterExpression?: ConditionExpression<A>;
 };
 
 export type Queryable<
@@ -68,7 +65,7 @@ export type Queryable<
     hk: A[HK],
     opts?: QueryOpts<AA, HK, RK, CE>
   ) => Promise<QueryResult<AA, A[RK]>>;
-  readonly scan: <CE extends ConditionExpression<A> = never>(
-    opts?: ScanOpts<A, HK, RK, CE>
+  readonly scan: (
+    opts?: ScanOpts<A, HK, RK>
   ) => Promise<ScanResult<A, A[HK], A[RK]>>;
 };

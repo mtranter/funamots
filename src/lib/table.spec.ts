@@ -165,6 +165,27 @@ describe('Table', () => {
       const deleted = await simpleTable.get(key);
       expect(deleted).toBeNull();
     });
+    it('Should delete with condition met', async () => {
+      const key = { hash: '1', age: 30, name: 'Fred' };
+      await simpleTable.put(key);
+      const result = await simpleTable.get(key);
+      expect(result).toEqual(key);
+      await simpleTable.delete(key, {
+        conditionExpression: { name: { '=': 'Fred' } },
+      });
+      const deleted = await simpleTable.get(key);
+      expect(deleted).toBeNull();
+    });
+    it('Should not delete when condition not met', async () => {
+      const key = { hash: '1', age: 30, name: 'Joe' };
+      await simpleTable.put(key);
+      const result = await simpleTable.get(key);
+      expect(result).toEqual(key);
+      const failureResult = simpleTable.delete(key, {
+        conditionExpression: { name: { '=': 'Fred' } },
+      });
+      expect(failureResult).rejects.toBeTruthy();
+    });
     it('Should not put when condition not met', async () => {
       const key = { hash: '1', age: 30 };
       await simpleTable.put(key);

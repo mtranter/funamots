@@ -9,6 +9,7 @@ import DynamoDb from 'aws-sdk/clients/dynamodb';
 
 import {
   ConditionExpression,
+  ConditionObject,
   serializeConditionExpression,
 } from './conditions';
 import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
@@ -33,20 +34,13 @@ type UpdateReturnValue =
   | 'ALL_NEW'
   | 'UPDATED_NEW';
 
-type SetOpts<
-  A extends DynamoObject,
-  RV extends UpdateReturnValue,
-  CE extends ConditionExpression<A> | never
-> = {
+type SetOpts<A extends DynamoObject, RV extends UpdateReturnValue> = {
   readonly returnValue?: RV;
-  readonly conditionExpression?: CE;
+  readonly conditionExpression?: ConditionExpression<A>;
 };
 
-type PutOpts<
-  A extends DynamoObject,
-  CE extends ConditionExpression<A> | never
-> = {
-  readonly conditionExpression?: CE;
+type PutOpts<A extends DynamoObject> = {
+  readonly conditionExpression?: ConditionExpression<A>;
 };
 
 type PartSetResponse<
@@ -95,20 +89,11 @@ export type Table<
   readonly transactGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
-  readonly put: <
-    AA extends A,
-    CE extends ConditionExpression<AA> | never = never
-  >(
-    a: AA,
-    opts?: PutOpts<AA, CE>
-  ) => Promise<void>;
-  readonly set: <
-    RV extends UpdateReturnValue = 'NONE',
-    CE extends ConditionExpression<A> | never = never
-  >(
+  readonly put: <AA extends A>(a: AA, opts?: PutOpts<A>) => Promise<void>;
+  readonly set: <RV extends UpdateReturnValue = 'NONE'>(
     key: Pick<A, HK | RK>,
     updates: Partial<Omit<A, HK | RK>>,
-    opts?: SetOpts<Omit<A, HK | RK>, RV, CE>
+    opts?: SetOpts<Omit<A, HK | RK>, RV>
   ) => Promise<SetResponse<A, RV>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
   readonly batchDelete: (
@@ -131,7 +116,12 @@ export type Table<
       }>;
     }>
   ) => Promise<void>;
-  readonly delete: (hk: Pick<A, HK | RK>) => Promise<void>;
+  readonly delete: (
+    hk: Pick<A, HK | RK>,
+    opts?: {
+      readonly conditionExpression?: ConditionExpression<A>;
+    }
+  ) => Promise<void>;
 
   readonly indexes: Indexes<Ixs>;
 };
@@ -212,7 +202,7 @@ const query = (
       ? ` and ${serializeConditionExpression(
           {
             [rk]: opts.sortKeyExpression,
-          },
+          } as ConditionObject<any>,
           attributes
         )}`
       : ''
@@ -254,7 +244,7 @@ const scan = (
   rk: string,
   marshaller: Marshaller,
   indexName?: string
-) => (opts?: ScanOpts<any, any, any, any>): Promise<QueryResult<any, any>> => {
+) => (opts?: ScanOpts<any, any, any>): Promise<QueryResult<any, any>> => {
   const attributes = new ExpressionAttributes();
 
   const lastKey =
@@ -418,9 +408,11 @@ export const Table = <
     scan: scan(dynamo, tableName, hashKey, sortKey, marshaller),
     put: (a, opts) => {
       const attributes = new ExpressionAttributes();
-      const conditionExpression = opts?.conditionExpression
-        ? serializeConditionExpression(opts.conditionExpression, attributes)
-        : undefined;
+
+      const conditionExpression =
+        opts?.conditionExpression !== undefined
+          ? serializeConditionExpression(opts.conditionExpression, attributes)
+          : undefined;
       return dynamo
         .putItem({
           TableName: tableName,
@@ -492,9 +484,10 @@ export const Table = <
     transactWrite: (args) => {
       const deletes = (args.deletes || []).map((item) => {
         const attributes = new ExpressionAttributes();
-        const conditionExpression = item.conditionExpression
-          ? serializeConditionExpression(item.conditionExpression, attributes)
-          : undefined;
+        const conditionExpression =
+          item.conditionExpression !== undefined
+            ? serializeConditionExpression(item.conditionExpression, attributes)
+            : undefined;
         return {
           Delete: {
             TableName: tableName,
@@ -509,9 +502,10 @@ export const Table = <
       });
       const puts = (args.puts || []).map((item) => {
         const attributes = new ExpressionAttributes();
-        const conditionExpression = item.conditionExpression
-          ? serializeConditionExpression(item.conditionExpression, attributes)
-          : undefined;
+        const conditionExpression =
+          item.conditionExpression !== undefined
+            ? serializeConditionExpression(item.conditionExpression, attributes)
+            : undefined;
         return {
           Put: {
             TableName: tableName,
@@ -529,9 +523,10 @@ export const Table = <
         const key = marshaller.marshallItem(
           extractKey(u.key, hashKey, sortKey)
         );
-        const conditionExpression = u.conditionExpression
-          ? serializeConditionExpression(u.conditionExpression, attributes)
-          : undefined;
+        const conditionExpression =
+          u.conditionExpression !== undefined
+            ? serializeConditionExpression(u.conditionExpression, attributes)
+            : undefined;
         return {
           Update: {
             Key: key,
@@ -551,14 +546,23 @@ export const Table = <
         .promise()
         .then(() => ({}));
     },
-    delete: (k) =>
-      dynamo
+    delete: (k, opts) => {
+      const attributes = new ExpressionAttributes();
+      const conditionExpression =
+        opts?.conditionExpression !== undefined
+          ? serializeConditionExpression(opts.conditionExpression, attributes)
+          : undefined;
+      return dynamo
         .deleteItem({
           TableName: tableName,
           Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
+          ConditionExpression: conditionExpression,
+          ExpressionAttributeNames: conditionExpression && attributes.names,
+          ExpressionAttributeValues: conditionExpression && attributes.values,
         })
         .promise()
-        .then(() => ({})),
+        .then(() => ({}));
+    },
     indexes: Object.keys(indexes).reduce(
       (p, k) => ({
         ...p,

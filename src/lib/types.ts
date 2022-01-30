@@ -12,7 +12,8 @@ export type DynamoObjectOf<T> = T extends Record<string, unknown>
 // eslint-disable-next-line functional/prefer-readonly-type
 export type DynamoObject = { [key: string]: DynamoPrimitive };
 
-type DynamoSet<T> = ReadonlySet<T> | ReadonlySet<T>;
+// eslint-disable-next-line functional/prefer-readonly-type
+type DynamoSet<T> = ReadonlySet<T> | Set<T>;
 
 export type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
   T,

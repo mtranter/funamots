@@ -15,6 +15,10 @@ e.g. The compiler will whinge at you if you try and
 
 The syntax is also much friendlier than the vanilla AWS DynamoDB client.
 
+### Detailed Docs
+
+See here: [./docs/index.md](./docs/index.md)
+
 ### Supported Operations
 
 - Get/Put/Query

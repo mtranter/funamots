@@ -13,7 +13,7 @@ export type Comparator<V> =
   | { readonly '<>': V };
 
 type KeysOfUnion<T> = T extends T ? keyof T : never;
-type DyanmoCompareOperator = KeysOfUnion<Comparator<any>>;
+type DyanmoCompareOperator = KeysOfUnion<Comparator<unknown>>;
 // eslint-disable-next-line functional/prefer-readonly-type
 const comparatorOperators: DyanmoCompareOperator[] = [
   '=',
@@ -32,16 +32,18 @@ const isComparator = <V>(a: unknown): a is Comparator<V> => {
   );
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ConditionObject<A> = A extends Record<string, any>
+  ? {
+      readonly [k in keyof A]?:
+        | Comparator<A[k]>
+        | ComparisonFunction<A[k]>
+        | ConditionExpression<A[k]>;
+    }
+  : never;
 export type ConditionExpression<A> =
   | BooleanCombinatorExpression<A>
-  | Partial<
-      {
-        readonly [k in keyof A]:
-          | Comparator<A[k]>
-          | ComparisonFunction<A[k]>
-          | ConditionExpression<A[k]>;
-      }
-    >
+  | ConditionObject<A>
   | readonly ConditionExpression<A>[];
 
 type BooleanCombinatorExpression<A> =
@@ -171,29 +173,27 @@ export const isIn = <V>(values: readonly V[]): ComparisonFunction<V> => ({
 });
 
 const isInFunction = <V>(
-  exp: ConditionExpression<unknown>
+  exp: unknown
 ): exp is ComparisonFunction<V> & { readonly values: readonly V[] } =>
   (exp as ComparisonFunction<V>).__type === 'function' &&
   (exp as ComparisonFunction<V>).function === 'in';
 
 const isBetweenFunction = <V>(
-  exp: ConditionExpression<unknown>
+  exp: unknown
 ): exp is ComparisonFunction<V> & { readonly lower: V; readonly upper: V } =>
   (exp as ComparisonFunction<V>).__type === 'function' &&
   (exp as ComparisonFunction<V>).function === 'between';
 
 const isSizeFunction = <V>(
-  exp: ConditionExpression<unknown>
+  exp: unknown
 ): exp is ComparisonFunction<V> & { readonly comparator: Comparator<number> } =>
   (exp as ComparisonFunction<V>).__type === 'function' &&
   (exp as ComparisonFunction<V>).function === 'size';
 
-const isComparisonFunction = <V>(
-  exp: ConditionExpression<unknown>
-): exp is ComparisonFunction<V> =>
+const isComparisonFunction = <V>(exp: unknown): exp is ComparisonFunction<V> =>
   (exp as ComparisonFunction<V>).__type === 'function';
 const isComparisonFunctionWithArg = <V>(
-  exp: ConditionExpression<unknown>
+  exp: unknown
 ): exp is ComparisonFunction<V> & { readonly arg: string } =>
   (exp as ComparisonFunction<V>).__type === 'function' &&
   !!(exp as { readonly arg: string }).arg;
@@ -226,10 +226,9 @@ const _serializeConditionExpression = <A>(
         expression.combinator
       );
     }
-  }
-  if (Array.isArray(expression)) {
+  } else if (Array.isArray(expression)) {
     const [head, ...tail] = expression;
-    return tail.reduce(
+    return tail.reduce<string>(
       (p, n) =>
         `${p} ${combinator} ${_serializeConditionExpression(
           n,
@@ -246,7 +245,8 @@ const _serializeConditionExpression = <A>(
         ...path.elements,
         { type: 'AttributeName' as const, name: key },
       ]);
-      const operator = expression[key as keyof A];
+      const queryObject = expression as ConditionObject<A>;
+      const operator = queryObject[key as keyof A];
       if (isBetweenFunction(operator)) {
         return `${attributes.addName(
           attributePath
@@ -295,4 +295,5 @@ export const serializeConditionExpression = <A>(
   expression: ConditionExpression<A>,
   attributes: ExpressionAttributes
 ) =>
+  expression &&
   _serializeConditionExpression(expression, attributes, new AttributePath([]));

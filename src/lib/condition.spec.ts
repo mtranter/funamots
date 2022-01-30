@@ -6,6 +6,7 @@ import {
   beginsWith,
   ConditionExpression,
   contains,
+  isIn,
   NOT,
   OR,
   serializeConditionExpression,
@@ -51,7 +52,7 @@ describe('Condition Expression builder', () => {
     expect(attributes.values[':val2'].S).toEqual('Child');
   });
   it('should build a valid function expression', () => {
-    const expression: ConditionExpression<MyDto> = {
+    const expression = {
       firstname: beginsWith('Fre'),
     };
     const attributes = new ExpressionAttributes();
@@ -131,6 +132,9 @@ describe('Condition Expression builder', () => {
     const expression: ConditionExpression<MyDto> = OR<MyDto>({
       firstname: beginsWith('Fre'),
       surname: contains('joe'),
+      child: {
+        name: isIn(['Mark']),
+      },
     });
     const attributes = new ExpressionAttributes();
     const expressionString = serializeConditionExpression(
@@ -138,12 +142,15 @@ describe('Condition Expression builder', () => {
       attributes
     );
     expect(expressionString).toEqual(
-      '(begins_with (#attr0, :val1)) OR (contains (#attr2, :val3))'
+      '((begins_with (#attr0, :val1)) OR (contains (#attr2, :val3))) OR (#attr4.#attr5 in (:val6))'
     );
     expect(attributes.names['#attr0']).toEqual('firstname');
     expect(attributes.values[':val1'].S).toEqual('Fre');
     expect(attributes.names['#attr2']).toEqual('surname');
     expect(attributes.values[':val3'].S).toEqual('joe');
+    expect(attributes.names['#attr4']).toEqual('child');
+    expect(attributes.names['#attr5']).toEqual('name');
+    expect(attributes.values[':val6'].S).toEqual('Mark');
   });
   it('should build a valid combined expression with explicit NOT operator', () => {
     const expression: ConditionExpression<MyDto> = NOT<MyDto>({
