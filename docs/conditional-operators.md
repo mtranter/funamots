@@ -19,7 +19,7 @@ export {
   size,
   isIn,
   contains,
-} from 'funamits/dist/conditions';
+} from 'funamots/dist/conditions';
 
 
 type Order {

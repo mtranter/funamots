@@ -6,25 +6,6 @@ Funamots uses advanced typescript typing techniques to make using DynamoDB a lit
 
 Use the `tableBuilder` function to represent the table that your application uses.
 
-The `tableBuilder` function returns an instance of the `Table<A, HK, RK, Indexes>` . This type represents a dynamo table that will hold objects of type `A`, with a hash key of type `HK`, a range key of `RK`, and a set of indexes of type `Indexes`.
-
-Type `A` is constrained to be of type `DynamoObject` where:
-
-```typescript
-type DynamoObject = { [key: string]: DynamoPrimitive };
-type DynamoPrimitive =
-  | DynamoKeyTypes
-  | Iterable<ArrayBufferView>
-  | Iterable<ArrayBuffer>
-  | boolean
-  | DynamoSet<string>
-  | DynamoSet<number>
-  | DynamoPrimitive[]
-  | DynamoObject
-  | undefined;
-type DynamoKeyTypes = string | number | ArrayBuffer | ArrayBufferView;
-type DynamoSet<T> = ReadonlySet<T> | Set<T>;
-```
 
 ### Hash key only tables
 
@@ -45,9 +26,9 @@ const simpleTable = tableBuilder<Person>('People')
 
 ```
 
-The above `simpleTable` varialbe represents a DynamoDB table named "People" with a hash/partition key named id. It is of type `Table<Person, 'id', never, {}>
+The above `simpleTable` varialbe represents a DynamoDB table named "People" with a hash/partition key named id. It is of type `Table<Person, 'id', never, {}>`
 
-### Hash Range key tables
+### Hash & Range key tables
 
 For a table that uses only a hash/partition key and NOT a range/sort key.
 
@@ -65,7 +46,7 @@ const table = tableBuilder<Order>('Orders')
 
 ```
 
-The above `table` varialbe represents a DynamoDB table named "Orders" with a hash/partition key named 'accountNumber', and a range/sort key named 'orderId'. It is of type `Table<Order, 'accountNumber', 'orderId', {}>
+The above `table` varialbe represents a DynamoDB table named "Orders" with a hash/partition key named 'accountNumber', and a range/sort key named 'orderId'. It is of type `Table<Order, 'accountNumber', 'orderId', {}>`
 
 In both cases, the key names will be type checked against the type passed as the generic argument to the tableBuilder function.
 
@@ -117,4 +98,27 @@ const customDynamoDB = tableBuilder<T>('SimpleTable')
       region: 'local-env',
     }),
   });
+```
+
+
+### The type stuff.
+
+The `tableBuilder` function returns an instance of the `Table<A, HK, RK, Indexes>` . This type represents a dynamo table that will hold objects of type `A`, with a hash key of type `HK`, a range key of `RK`, and a set of indexes of type `Indexes`.
+
+Type `A` is constrained to be of type `DynamoObject` where:
+
+```typescript
+type DynamoObject = { [key: string]: DynamoPrimitive };
+type DynamoPrimitive =
+  | DynamoKeyTypes
+  | Iterable<ArrayBufferView>
+  | Iterable<ArrayBuffer>
+  | boolean
+  | DynamoSet<string>
+  | DynamoSet<number>
+  | DynamoPrimitive[]
+  | DynamoObject
+  | undefined;
+type DynamoKeyTypes = string | number | ArrayBuffer | ArrayBufferView;
+type DynamoSet<T> = ReadonlySet<T> | Set<T>;
 ```
