@@ -41,3 +41,11 @@ export type DynamoPrimitive =
 export type DynamoValueKeys<T extends DynamoObject> = ValueOf<{
   [key in keyof T]: T[key] extends DynamoKeyTypes ? key : never
 }>
+
+export type RecursivePartial<T> = {
+  readonly [P in keyof T]?: T[P] extends readonly (infer U)[]
+    ? readonly RecursivePartial<U>[]
+    : T[P] extends Record<string, unknown>
+    ? RecursivePartial<T[P]>
+    : T[P];
+};

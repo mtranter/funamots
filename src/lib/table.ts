@@ -24,6 +24,7 @@ import {
   DynamoObject,
   DynamoPrimitive,
   DynamoValueKeys,
+  RecursivePartial,
   RequireAtLeastOne,
 } from './types';
 
@@ -92,7 +93,7 @@ export type Table<
   readonly put: <AA extends A>(a: AA, opts?: PutOpts<A>) => Promise<void>;
   readonly set: <RV extends UpdateReturnValue = 'NONE'>(
     key: Pick<A, HK | RK>,
-    updates: Partial<Omit<A, HK | RK>>,
+    updates: RecursivePartial<Omit<A, HK | RK>>,
     opts?: SetOpts<Omit<A, HK | RK>, RV>
   ) => Promise<SetResponse<A, RV>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
@@ -427,7 +428,7 @@ export const Table = <
         );
     },
     set: (k, v, opts) => {
-      const request = serializeSetAction(v);
+      const request = serializeSetAction(v as Record<string, DynamoPrimitive>);
       const attributes = new ExpressionAttributes();
       const expression = request.serialize(attributes);
       const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey));
