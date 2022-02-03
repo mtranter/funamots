@@ -193,7 +193,7 @@ const query = (
   indexName?: string
 ) => (
   hkv: DynamoPrimitive,
-  opts?: QueryOpts<any, any, any, any>
+  opts?: QueryOpts<any, any, any>
 ): Promise<QueryResult<any, any>> => {
   const attributes = new ExpressionAttributes();
   const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(

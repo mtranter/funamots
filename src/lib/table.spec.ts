@@ -417,12 +417,12 @@ describe('Table', () => {
       await compoundTable.transactPut(testObjects.map((item) => ({ item })));
       const result = await compoundTable.query('1234', {
         filterExpression: AND<CompoundKey>(
-          OR<CompoundKey>(
+          OR(
             {
               lsirange: { '=': 5 },
               name: beginsWith('Fre'),
             },
-            NOT<CompoundKey>({ lsirange: between(7, 13) })
+            NOT({ lsirange: between(7, 13) })
           ),
           { name: isIn(['Fred', 'John', 'Mike']) }
         ),

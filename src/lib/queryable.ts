@@ -27,8 +27,7 @@ export type SortKeyCompare<RKV> =
 export type QueryOpts<
   A extends DynamoObject,
   HK extends string,
-  RK extends string,
-  CE extends ConditionExpression<Omit<A, HK | RK>> | never
+  RK extends string
 > = {
   readonly pageSize?: number;
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
@@ -36,7 +35,7 @@ export type QueryOpts<
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;
   readonly consistentRead?: boolean;
-  readonly filterExpression?: CE;
+  readonly filterExpression?: ConditionExpression<Omit<A, HK | RK>>;
 };
 
 export type ScanOpts<
@@ -58,12 +57,9 @@ export type Queryable<
   HK extends string,
   RK extends string
 > = {
-  readonly query: <
-    AA extends A = A,
-    CE extends ConditionExpression<Omit<AA, HK | RK>> = never
-  >(
+  readonly query: <AA extends A = A>(
     hk: A[HK],
-    opts?: QueryOpts<AA, HK, RK, CE>
+    opts?: QueryOpts<AA, HK, RK>
   ) => Promise<QueryResult<AA, A[RK]>>;
   readonly scan: (
     opts?: ScanOpts<A, HK, RK>
