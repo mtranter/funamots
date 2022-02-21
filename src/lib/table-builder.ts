@@ -8,6 +8,13 @@ import { DynamoObject } from './types';
 
 type Name = string;
 
+export type Logger = {
+  readonly debug: (msg: string, meta?: object) => unknown;
+  readonly info: (msg: string, meta?: object) => unknown;
+  readonly warn: (msg: string, meta?: object) => unknown;
+  readonly error: (msg: string, meta?: object) => unknown;
+};
+
 export type IndexDefinition<
   T extends DynamoObject,
   PartitionKey extends string & keyof T = never,
@@ -64,7 +71,10 @@ type WithIndexes<
 };
 
 export type DynamodbTableConfig = MarshallingOptions &
-  DynamoDB.Types.ClientConfiguration & { readonly client?: DynamoDB };
+  DynamoDB.Types.ClientConfiguration & {
+    readonly client?: DynamoDB;
+    readonly logger?: Logger;
+  };
 type Build<
   T extends DynamoObject,
   PartitionKey extends string & keyof T = never,

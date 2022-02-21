@@ -18,6 +18,7 @@ import {
   DynamodbTableConfig,
   IndexDefinition,
   IndexDefinitions,
+  Logger,
   TableDefinition,
 } from './table-builder';
 import {
@@ -186,6 +187,7 @@ const serializeSetAction = (
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 const query = (
   dynamo: DynamoDb,
+  logger: Logger,
   table: string,
   hk: string,
   rk: string,
@@ -235,11 +237,16 @@ const query = (
         r.LastEvaluatedKey &&
         rk &&
         marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
-    }));
+    }))
+    .catch((e) => {
+      logger.error(e);
+      return Promise.reject(e);
+    });
 };
 
 const scan = (
   dynamo: DynamoDb,
+  logger: Logger,
   table: string,
   hk: string,
   rk: string,
@@ -279,7 +286,11 @@ const scan = (
         r.LastEvaluatedKey &&
         rk &&
         marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
-    }));
+    }))
+    .catch((e) => {
+      logger.error(e);
+      return Promise.reject(e);
+    });
 };
 /* eslint-enable */
 
@@ -319,6 +330,7 @@ export const Table = <
   tableDefintion: TableDefinition<T, PartitionKey, SortKey, Ixs>,
   config?: DynamodbTableConfig
 ): TableFactoryResult<T, PartitionKey, SortKey, Ixs> => {
+  const logger: Logger = config.logger || console;
   const dynamo = config?.client || new DynamoDb(config);
   const marshaller = new Marshaller(
     Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify' }, config)
@@ -359,7 +371,11 @@ export const Table = <
                 )
               : marshaller.unmarshallItem(r.Item)
             : null
-        );
+        )
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     batchGet: (keys, opts) => {
       const projectionExpression = opts?.keys?.reduce((ea, n) => {
@@ -387,7 +403,11 @@ export const Table = <
           Object.values(r.Responses)[0].map(
             marshaller.unmarshallItem.bind(marshaller)
           )
-        );
+        )
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     transactGet: (keys) =>
       dynamo
@@ -404,9 +424,13 @@ export const Table = <
           r.Responses.map((r) =>
             r.Item ? marshaller.unmarshallItem(r.Item) : undefined
           ).filter((i) => i != undefined)
-        ),
-    query: query(dynamo, tableName, hashKey, sortKey, marshaller),
-    scan: scan(dynamo, tableName, hashKey, sortKey, marshaller),
+        )
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        }),
+    query: query(dynamo, logger, tableName, hashKey, sortKey, marshaller),
+    scan: scan(dynamo, logger, tableName, hashKey, sortKey, marshaller),
     put: (a, opts) => {
       const attributes = new ExpressionAttributes();
 
@@ -425,7 +449,11 @@ export const Table = <
         .promise()
         .then((i) =>
           i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
-        );
+        )
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     set: (k, v, opts) => {
       const request = serializeSetAction(v as Record<string, DynamoPrimitive>);
@@ -448,7 +476,11 @@ export const Table = <
         .promise()
         .then((i) =>
           i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
-        );
+        )
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     batchPut: (a) =>
       dynamo
@@ -462,7 +494,11 @@ export const Table = <
           },
         })
         .promise()
-        .then(() => ({})),
+        .then(() => ({}))
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        }),
     batchDelete: (a) =>
       dynamo
         .batchWriteItem({
@@ -477,7 +513,11 @@ export const Table = <
           },
         })
         .promise()
-        .then(() => ({})),
+        .then(() => ({}))
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        }),
     transactPut: (a) =>
       Table(tableDefintion, config).transactWrite({ puts: a }),
     transactDelete: (a) =>
@@ -545,7 +585,11 @@ export const Table = <
           TransactItems,
         })
         .promise()
-        .then(() => ({}));
+        .then(() => ({}))
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     delete: (k, opts) => {
       const attributes = new ExpressionAttributes();
@@ -562,7 +606,11 @@ export const Table = <
           ExpressionAttributeValues: conditionExpression && attributes.values,
         })
         .promise()
-        .then(() => ({}));
+        .then(() => ({}))
+        .catch((e) => {
+          logger.error(e);
+          return Promise.reject(e);
+        });
     },
     indexes: Object.keys(indexes).reduce(
       (p, k) => ({
@@ -571,6 +619,7 @@ export const Table = <
           [k]: {
             query: query(
               dynamo,
+              logger,
               tableName,
               indexes[k].partitionKey,
               indexes[k].sortKey,
@@ -579,6 +628,7 @@ export const Table = <
             ),
             scan: scan(
               dynamo,
+              logger,
               tableName,
               indexes[k].partitionKey,
               indexes[k].sortKey,
