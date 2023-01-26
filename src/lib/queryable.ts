@@ -58,7 +58,7 @@ export type Queryable<
   RK extends string
 > = {
   readonly query: <AA extends A = A>(
-    hk: A[HK],
+    hk: NonNullable<A[HK]>,
     opts?: QueryOpts<AA, HK, RK>
   ) => Promise<QueryResult<AA, A[RK]>>;
   readonly scan: (

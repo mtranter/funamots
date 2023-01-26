@@ -231,6 +231,13 @@ describe('Table', () => {
       readonly lsirange?: number;
       readonly name?: string;
       readonly documentVersionId?: string;
+      readonly complexSubDoc?: {
+        readonly id: string;
+        readonly subSubDoc?: {
+          readonly id: string;
+          readonly name: string;
+        };
+      };
     };
 
     const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
@@ -257,17 +264,27 @@ describe('Table', () => {
         sort: 1,
         gsihash: 'gsi hash value',
         lsirange: 1,
+        complexSubDoc: {
+          id: '321',
+          subSubDoc: {
+            id: '123',
+            name: 'fred',
+          },
+        },
       };
       const setup = async () => {
         await compoundTable.put(key);
         return compoundTable.get(key, {
-          keys: ['gsihash', 'sort'],
+          keys: ['gsihash', 'sort', 'complexSubDoc.subSubDoc.id'],
         });
       };
       it('Should get selected keys', async () => {
         const result = await setup();
         expect(result?.gsihash).toEqual(key.gsihash);
         expect(result?.sort).toEqual(key.sort);
+        expect(result?.complexSubDoc.subSubDoc.id).toEqual('123');
+        expect((result?.complexSubDoc.subSubDoc as any).name).toBeUndefined();
+        expect((result?.complexSubDoc as any).id).toBeUndefined();
       });
       it('Should not fetch non selected keys', async () => {
         const result = await setup();

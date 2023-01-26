@@ -25,6 +25,8 @@ import {
   DynamoObject,
   DynamoPrimitive,
   DynamoValueKeys,
+  NestedKeyOf,
+  NestedPick,
   RecursivePartial,
   RequireAtLeastOne,
 } from './types';
@@ -73,21 +75,21 @@ export type Table<
   RK extends string,
   Ixs extends IndexDefinitions
 > = {
-  readonly get: <AA extends A = A, Keys extends keyof AA = keyof AA>(
+  readonly get: <AA extends A, Keys extends NestedKeyOf<AA> = NestedKeyOf<AA>>(
     hk: Pick<A, HK | RK>,
     opts?: {
       readonly consistentRead?: boolean;
-      readonly marshaller?: DynamoMarshallerFor<AA>;
+      readonly marshaller?: DynamoMarshallerFor<A>;
       readonly keys?: readonly Keys[];
     }
-  ) => Promise<Pick<AA, Keys> | null>;
-  readonly batchGet: <Keys extends keyof A = keyof A>(
+  ) => Promise<NestedPick<AA, Keys> | null>;
+  readonly batchGet: <Keys extends NestedKeyOf<A> = NestedKeyOf<A>>(
     hks: readonly Pick<A, HK | RK>[],
     opts?: {
       readonly consistentRead?: boolean;
       readonly keys?: readonly Keys[];
     }
-  ) => Promise<readonly Pick<A, Keys>[]>;
+  ) => Promise<readonly NestedPick<A, Keys>[]>;
   readonly transactGet: (
     hks: readonly Pick<A, HK | RK>[]
   ) => Promise<readonly A[]>;
@@ -343,21 +345,28 @@ export const Table = <
   } = tableDefintion;
   const retval: TableFactoryResult<T, PartitionKey, SortKey, Ixs> = {
     get: (hkv, opts) => {
-      const projectionExpression = opts?.keys?.reduce((ea, n) => {
-        ea.addName(n.toString());
-        return ea;
-      }, new ExpressionAttributes());
+      const keys = (opts?.keys || []) as readonly string[];
+      const keysSupplied = keys.length > 0;
+      const projectionExpressionAttributes = new ExpressionAttributes();
+      const projectionExpression = keys
+        .map((k) => {
+          const exp = projectionExpressionAttributes.addName(
+            new AttributePath(k)
+          );
+          return exp;
+        })
+        .join(', ');
+
       const req = {
         TableName: tableDefintion.name,
         Key: marshaller.marshallItem(
           extractKey(hkv, tableDefintion.partitionKey, sortKey)
         ),
         ConsistentRead: opts?.consistentRead,
-        ProjectionExpression:
-          projectionExpression &&
-          Object.keys(projectionExpression.names).join(', '),
-        ExpressionAttributeNames:
-          projectionExpression && projectionExpression.names,
+        ProjectionExpression: keysSupplied ? projectionExpression : undefined,
+        ExpressionAttributeNames: keysSupplied
+          ? projectionExpressionAttributes.names
+          : undefined,
       };
       return dynamo
         .getItem(req)
@@ -378,10 +387,17 @@ export const Table = <
         });
     },
     batchGet: (keys, opts) => {
-      const projectionExpression = opts?.keys?.reduce((ea, n) => {
-        ea.addName(n.toString());
-        return ea;
-      }, new ExpressionAttributes());
+      const projKeys = (opts?.keys || []) as readonly string[];
+      const projKeysSupplied = projKeys.length > 0;
+      const projectionExpressionAttributes = new ExpressionAttributes();
+      const projectionExpression = projKeys
+        .map((k) => {
+          const exp = projectionExpressionAttributes.addName(
+            new AttributePath(k)
+          );
+          return exp;
+        })
+        .join(', ');
       return dynamo
         .batchGetItem({
           RequestItems: {
@@ -390,11 +406,12 @@ export const Table = <
                 marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
               ),
               ConsistentRead: opts?.consistentRead,
-              ProjectionExpression:
-                projectionExpression &&
-                Object.keys(projectionExpression.names).join(', '),
-              ExpressionAttributeNames:
-                projectionExpression && projectionExpression.names,
+              ProjectionExpression: projKeysSupplied
+                ? projectionExpression
+                : undefined,
+              ExpressionAttributeNames: projKeysSupplied
+                ? projectionExpressionAttributes.names
+                : undefined,
             },
           },
         })
@@ -442,8 +459,14 @@ export const Table = <
         .putItem({
           TableName: tableName,
           Item: marshall(a),
-          ExpressionAttributeNames: conditionExpression && attributes.names,
-          ExpressionAttributeValues: conditionExpression && attributes.values,
+          ExpressionAttributeNames:
+            Object.keys(attributes.names).length > 0
+              ? attributes.names
+              : undefined,
+          ExpressionAttributeValues:
+            Object.keys(attributes.values).length > 0
+              ? attributes.values
+              : undefined,
           ConditionExpression: conditionExpression,
         })
         .promise()
@@ -468,8 +491,14 @@ export const Table = <
           TableName: tableName,
           Key: key,
           UpdateExpression: expression,
-          ExpressionAttributeNames: attributes.names,
-          ExpressionAttributeValues: attributes.values,
+          ExpressionAttributeNames:
+            Object.keys(attributes.names).length > 0
+              ? attributes.names
+              : undefined,
+          ExpressionAttributeValues:
+            Object.keys(attributes.values).length > 0
+              ? attributes.values
+              : undefined,
           ReturnValues: opts?.returnValue || 'ALL_NEW',
           ConditionExpression: conditionExpression,
         })
@@ -536,8 +565,14 @@ export const Table = <
               extractKey(item.item, hashKey, sortKey)
             ),
             ConditionExpression: conditionExpression,
-            ExpressionAttributeNames: conditionExpression && attributes.names,
-            ExpressionAttributeValues: conditionExpression && attributes.values,
+            ExpressionAttributeNames:
+              Object.keys(attributes.names).length > 0
+                ? attributes.names
+                : undefined,
+            ExpressionAttributeValues:
+              Object.keys(attributes.values).length > 0
+                ? attributes.values
+                : undefined,
           },
         };
       });
@@ -552,8 +587,14 @@ export const Table = <
             TableName: tableName,
             Item: marshaller.marshallItem(item.item),
             ConditionExpression: conditionExpression,
-            ExpressionAttributeNames: conditionExpression && attributes.names,
-            ExpressionAttributeValues: conditionExpression && attributes.values,
+            ExpressionAttributeNames:
+              Object.keys(attributes.names).length > 0
+                ? attributes.names
+                : undefined,
+            ExpressionAttributeValues:
+              Object.keys(attributes.values).length > 0
+                ? attributes.values
+                : undefined,
           },
         };
       });
@@ -572,8 +613,14 @@ export const Table = <
           Update: {
             Key: key,
             UpdateExpression: expression,
-            ExpressionAttributeNames: attributes.names,
-            ExpressionAttributeValues: attributes.values,
+            ExpressionAttributeNames:
+              Object.keys(attributes.names).length > 0
+                ? attributes.names
+                : undefined,
+            ExpressionAttributeValues:
+              Object.keys(attributes.values).length > 0
+                ? attributes.values
+                : undefined,
             ConditionExpression: conditionExpression,
             TableName: tableName,
           },
@@ -602,8 +649,14 @@ export const Table = <
           TableName: tableName,
           Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
           ConditionExpression: conditionExpression,
-          ExpressionAttributeNames: conditionExpression && attributes.names,
-          ExpressionAttributeValues: conditionExpression && attributes.values,
+          ExpressionAttributeNames:
+            Object.keys(attributes.names).length > 0
+              ? attributes.names
+              : undefined,
+          ExpressionAttributeValues:
+            Object.keys(attributes.values).length > 0
+              ? attributes.values
+              : undefined,
         })
         .promise()
         .then(() => ({}))
