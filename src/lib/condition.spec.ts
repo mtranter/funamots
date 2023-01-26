@@ -1,4 +1,4 @@
-import { ExpressionAttributes } from '@aws/dynamodb-expressions';
+import { ExpressionAttributes } from '@awslabs-community-fork/dynamodb-expressions';
 
 import {
   AND,

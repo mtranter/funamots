@@ -1,18 +1,22 @@
-import { Marshaller } from '@aws/dynamodb-auto-marshaller';
+import { DynamoDB as DynamoDb } from '@aws-sdk/client-dynamodb';
 import {
   AttributePath,
   ExpressionAttributes,
   PathElement,
   UpdateExpression,
-} from '@aws/dynamodb-expressions';
-import DynamoDb from 'aws-sdk/clients/dynamodb';
+} from '@awslabs-community-fork/dynamodb-expressions';
 
 import {
   ConditionExpression,
   ConditionObject,
   serializeConditionExpression,
 } from './conditions';
-import { DynamoMarshallerFor, marshall, unmarshall } from './marshalling';
+import {
+  DynamoMarshallerFor,
+  marshaller,
+  Marshaller,
+  unmarshall,
+} from './marshalling';
 import { Queryable, QueryOpts, QueryResult, ScanOpts } from './queryable';
 import {
   DynamodbTableConfig,
@@ -232,7 +236,6 @@ const query = (
       ScanIndexForward: !(opts && opts.descending),
       FilterExpression: filterExpression,
     })
-    .promise()
     .then((r) => ({
       records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
       lastSortKey:
@@ -279,7 +282,6 @@ const scan = (
       ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
       FilterExpression: filterExpression,
     })
-    .promise()
     .then((r) => ({
       records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
       lastHashKey:
@@ -299,12 +301,10 @@ const scan = (
 export type TableConfig<
   A extends Record<string, DynamoPrimitive>,
   HK extends DynamoValueKeys<A> & string,
-  RK extends DynamoValueKeys<A> & string = never,
-  AA extends A = A
+  RK extends DynamoValueKeys<A> & string = never
 > = {
   readonly hashKey: HK;
   readonly sortKey?: RK;
-  readonly customMarshaller?: DynamoMarshallerFor<AA>;
 };
 
 type Index<ID> = ID extends IndexDefinition<infer T, infer PK, infer SK>
@@ -334,9 +334,7 @@ export const Table = <
 ): TableFactoryResult<T, PartitionKey, SortKey, Ixs> => {
   const logger: Logger = config.logger || console;
   const dynamo = config?.client || new DynamoDb(config);
-  const marshaller = new Marshaller(
-    Object.assign({}, { unwrapNumbers: true, onEmpty: 'nullify' }, config)
-  );
+
   const {
     name: tableName,
     partitionKey: hashKey,
@@ -370,7 +368,6 @@ export const Table = <
       };
       return dynamo
         .getItem(req)
-        .promise()
         .then((r) =>
           r.Item
             ? opts?.marshaller
@@ -415,7 +412,6 @@ export const Table = <
             },
           },
         })
-        .promise()
         .then((r) =>
           Object.values(r.Responses)[0].map(
             marshaller.unmarshallItem.bind(marshaller)
@@ -436,7 +432,6 @@ export const Table = <
             },
           })),
         })
-        .promise()
         .then((r) =>
           r.Responses.map((r) =>
             r.Item ? marshaller.unmarshallItem(r.Item) : undefined
@@ -458,7 +453,7 @@ export const Table = <
       return dynamo
         .putItem({
           TableName: tableName,
-          Item: marshall(a),
+          Item: marshaller.marshallItem(a),
           ExpressionAttributeNames:
             Object.keys(attributes.names).length > 0
               ? attributes.names
@@ -469,7 +464,6 @@ export const Table = <
               : undefined,
           ConditionExpression: conditionExpression,
         })
-        .promise()
         .then((i) =>
           i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
         )
@@ -502,7 +496,6 @@ export const Table = <
           ReturnValues: opts?.returnValue || 'ALL_NEW',
           ConditionExpression: conditionExpression,
         })
-        .promise()
         .then((i) =>
           i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
         )
@@ -522,7 +515,6 @@ export const Table = <
             })),
           },
         })
-        .promise()
         .then(() => ({}))
         .catch((e) => {
           logger.error(e);
@@ -541,7 +533,6 @@ export const Table = <
             })),
           },
         })
-        .promise()
         .then(() => ({}))
         .catch((e) => {
           logger.error(e);
@@ -631,7 +622,6 @@ export const Table = <
         .transactWriteItems({
           TransactItems,
         })
-        .promise()
         .then(() => ({}))
         .catch((e) => {
           logger.error(e);
@@ -658,7 +648,6 @@ export const Table = <
               ? attributes.values
               : undefined,
         })
-        .promise()
         .then(() => ({}))
         .catch((e) => {
           logger.error(e);

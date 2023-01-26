@@ -2,7 +2,7 @@ import {
   AttributePath,
   AttributeValue,
   ExpressionAttributes,
-} from '@aws/dynamodb-expressions';
+} from '@awslabs-community-fork/dynamodb-expressions';
 
 export type Comparator<V> =
   | { readonly '=': V }

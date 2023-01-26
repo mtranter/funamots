@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable functional/no-method-signature */
-import { MarshallingOptions } from '@aws/dynamodb-auto-marshaller';
-import { DynamoDB } from 'aws-sdk';
+import { DynamoDB, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
+import { marshallOptions, unmarshallOptions } from '@aws-sdk/util-dynamodb';
 
 import { Table, TableFactoryResult } from './table';
 import { DynamoObject } from './types';
@@ -70,8 +70,9 @@ type WithIndexes<
   >;
 };
 
-export type DynamodbTableConfig = MarshallingOptions &
-  DynamoDB.Types.ClientConfiguration & {
+export type DynamodbTableConfig = marshallOptions &
+  unmarshallOptions &
+  DynamoDBClientConfig & {
     readonly client?: DynamoDB;
     readonly logger?: Logger;
   };

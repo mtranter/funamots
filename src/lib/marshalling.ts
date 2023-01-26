@@ -1,5 +1,5 @@
-import { Marshaller } from '@aws/dynamodb-auto-marshaller';
-import { AttributeMap, AttributeValue } from 'aws-sdk/clients/dynamodb';
+import { AttributeValue } from '@aws-sdk/client-dynamodb';
+import * as M from '@aws-sdk/util-dynamodb';
 
 import { DynamoObject, DynamoPrimitive } from './types';
 
@@ -9,10 +9,30 @@ type DynamoMarshaller<T extends DynamoPrimitive> = {
   readonly optional: () => DynamoMarshaller<T | undefined>;
 };
 
-const marshaller = new Marshaller({
-  unwrapNumbers: true,
-  onEmpty: 'nullify',
-});
+export type AttributeMap = {
+  readonly [key: string]: AttributeValue;
+};
+
+export const marshaller = {
+  marshallValue: (value: DynamoPrimitive): AttributeValue =>
+    M.convertToAttr(value, {
+      convertEmptyValues: true,
+      convertClassInstanceToMap: true,
+      removeUndefinedValues: true,
+    }),
+  unmarshallValue: (value: AttributeValue) =>
+    M.convertToNative(value, { wrapNumbers: false }),
+  marshallItem: (value: DynamoObject): AttributeMap =>
+    M.marshall(value, {
+      convertEmptyValues: true,
+      convertClassInstanceToMap: true,
+      removeUndefinedValues: true,
+    }),
+  unmarshallItem: (value: AttributeMap) =>
+    M.unmarshall(value, { wrapNumbers: false }),
+};
+
+export type Marshaller = typeof marshaller;
 
 export type DynamoMarshallerFor<T extends DynamoObject> = {
   readonly [k in keyof T]: DynamoMarshaller<T[k]>;
@@ -48,7 +68,8 @@ export const Marshallers = {
   numberSet: buildMarshaller<ReadonlySet<number>>(),
   map: <T extends DynamoObject>(schema: DynamoMarshallerFor<T>) =>
     ({
-      from: (av: AttributeValue) => unmarshall<T>(schema, av as AttributeMap),
+      from: (av: AttributeValue) =>
+        unmarshall<T>(schema, (av as unknown) as AttributeMap),
       to: (t: T) => marshall(t) as AttributeValue,
       optional: () => buildMarshaller<T | undefined>(true),
     } as DynamoMarshaller<T>),
@@ -56,9 +77,8 @@ export const Marshallers = {
   arrayBufferView: buildMarshaller<ArrayBufferView>(),
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const marshall = <TT, _T extends DynamoObject & TT>(t: TT) =>
-  marshaller.marshallItem(t);
+export const marshall = <T extends DynamoObject>(t: T) =>
+  marshaller.marshallValue(t);
 export const unmarshall = <T extends DynamoObject>(
   schema: DynamoMarshallerFor<T>,
   item: AttributeMap

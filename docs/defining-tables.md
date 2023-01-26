@@ -6,7 +6,6 @@ Funamots uses advanced typescript typing techniques to make using DynamoDB a lit
 
 Use the `tableBuilder` function to represent the table that your application uses.
 
-
 ### Hash key only tables
 
 For a table that uses only a hash/partition key and NOT a range/sort key.
@@ -94,12 +93,11 @@ const customDynamoDB = tableBuilder<T>('SimpleTable')
   .build({
     client: new DynamoDB({
       endpoint: 'localhost:8000',
-      sslEnabled: false,
+      tls: false,
       region: 'local-env',
     }),
   });
 ```
-
 
 ### The type stuff.
 

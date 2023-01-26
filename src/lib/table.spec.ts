@@ -1,4 +1,4 @@
-import { DynamoDB } from 'aws-sdk';
+import { DynamoDB } from '@aws-sdk/client-dynamodb';
 
 import {
   AND,
@@ -29,8 +29,8 @@ describe('Table', () => {
       .withKey('hash')
       .build({
         client: new DynamoDB({
-          endpoint: 'localhost:8000',
-          sslEnabled: false,
+          endpoint: 'http://localhost:8000',
+          tls: false,
           region: 'local-env',
         }),
       });
@@ -245,8 +245,8 @@ describe('Table', () => {
       .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
       .withLocalIndex('ix_by_lsirange', 'lsirange')
       .build({
-        endpoint: 'localhost:8000',
-        sslEnabled: false,
+        endpoint: 'http://localhost:8000',
+        tls: false,
         region: 'local-env',
       });
 
