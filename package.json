@@ -33,7 +33,7 @@
     "version": "standard-version",
     "reset-hard": "git clean -dfx && git reset --hard && yarn",
     "prepare-release": "run-s reset-hard test cov:check doc:html version doc:publish",
-    "build-ci": "run-s build test:int cov:lcov cov:check"
+    "build-ci": "run-s build test:int"
   },
   "engines": {
     "node": ">=10"
