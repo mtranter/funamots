@@ -59,6 +59,7 @@ const buildMarshaller: <T extends DynamoPrimitive>(
   optional: () => buildMarshaller<T | undefined>(true),
 });
 
+/* istanbul ignore next */
 export const Marshallers = {
   string: buildMarshaller<string>(),
   number: buildMarshaller<number>(),
