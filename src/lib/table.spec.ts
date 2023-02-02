@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { DynamoDB } from 'aws-sdk';
 
 import {
@@ -289,7 +290,6 @@ describe('Table', () => {
       it('Should not fetch non selected keys', async () => {
         const result = await setup();
         expect(result?.gsihash).toEqual(key.gsihash);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((result as any).hash).toBeUndefined();
       });
     });
@@ -383,6 +383,22 @@ describe('Table', () => {
       const result2 = await compoundTable.query('1', {
         pageSize: 10,
         fromSortKey: result.lastSortKey,
+      });
+      expect(result2.records).toEqual(testObjects.slice(10));
+    });
+
+    it('Should put and query with nextSortKey object', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+      }));
+
+      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
+      const result = await compoundTable.query('1', { pageSize: 10 });
+      expect(result.records).toEqual(testObjects.slice(0, 10));
+      const result2 = await compoundTable.query('1', {
+        pageSize: 10,
+        startKey: result.nextStartKey,
       });
       expect(result2.records).toEqual(testObjects.slice(10));
     });
