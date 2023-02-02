@@ -55,7 +55,7 @@ export type NestedKeyOf<T, D extends number = 3> = [D] extends [never]
   ? { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
   : '';
 
-// eslint-disable-next-line functional/no-return-void
+// eslint-disable-next-line functional/no-return-void, @typescript-eslint/no-explicit-any
 type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
   k: infer I
   // eslint-disable-next-line functional/no-return-void
@@ -86,22 +86,3 @@ type _NestedPick<
 export type NestedPick<A, K extends string> = UnionToIntersection<
   _NestedPick<A, K>
 >;
-
-type Course = {
-  id: string;
-  module: {
-    id: string;
-    submodule: {
-      id: string;
-      name: string;
-    };
-  };
-};
-
-const fn = <A, K extends NestedKeyOf<A>>(
-  a: A,
-  keys: K
-): NestedPick<Course, K> => {
-  // eslint-disable-next-line functional/no-throw-statement
-  throw new Error('');
-};

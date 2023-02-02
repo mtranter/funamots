@@ -217,9 +217,10 @@ const query = (
       : ''
   }`;
   const lastKey =
-    opts?.fromSortKey &&
-    rk &&
-    Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey });
+    opts?.startKey ??
+    (opts?.fromSortKey &&
+      rk &&
+      Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey }));
 
   const filterExpression = opts?.filterExpression
     ? serializeConditionExpression(opts.filterExpression, attributes)
@@ -236,13 +237,17 @@ const query = (
       ScanIndexForward: !(opts && opts.descending),
       FilterExpression: filterExpression,
     })
-    .then((r) => ({
-      records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
-      lastSortKey:
+    .then((r) => {
+      const nextStartKey =
         r.LastEvaluatedKey &&
         rk &&
-        marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
-    }))
+        marshaller.unmarshallItem(r.LastEvaluatedKey);
+      return {
+        records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
+        lastSortKey: nextStartKey?.[rk],
+        nextStartKey,
+      };
+    })
     .catch((e) => {
       logger.error(e);
       return Promise.reject(e);
@@ -261,9 +266,14 @@ const scan = (
   const attributes = new ExpressionAttributes();
 
   const lastKey =
-    opts?.fromSortKey &&
-    rk &&
-    Object.assign({}, { [hk]: opts.fromHashKey }, { [rk]: opts.fromSortKey });
+    opts?.startKey ??
+    (opts?.fromSortKey &&
+      rk &&
+      Object.assign(
+        {},
+        { [hk]: opts.fromHashKey },
+        { [rk]: opts.fromSortKey }
+      ));
 
   const filterExpression = opts?.filterExpression
     ? serializeConditionExpression(opts.filterExpression, attributes)
@@ -282,15 +292,20 @@ const scan = (
       ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
       FilterExpression: filterExpression,
     })
-    .then((r) => ({
-      records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
-      lastHashKey:
-        r.LastEvaluatedKey && marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
-      lastSortKey:
+    .then((r) => {
+      const nextStartKey =
         r.LastEvaluatedKey &&
         rk &&
-        marshaller.unmarshallItem(r.LastEvaluatedKey)[rk],
-    }))
+        marshaller.unmarshallItem(r.LastEvaluatedKey);
+      return {
+        records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
+        lastHashKey:
+          r.LastEvaluatedKey &&
+          marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
+        lastSortKey: nextStartKey?.[rk],
+        nextStartKey,
+      };
+    })
     .catch((e) => {
       logger.error(e);
       return Promise.reject(e);

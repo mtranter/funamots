@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
 
 import {
@@ -289,7 +290,6 @@ describe('Table', () => {
       it('Should not fetch non selected keys', async () => {
         const result = await setup();
         expect(result?.gsihash).toEqual(key.gsihash);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((result as any).hash).toBeUndefined();
       });
     });

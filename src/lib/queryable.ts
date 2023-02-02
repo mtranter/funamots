@@ -8,13 +8,24 @@ import { DynamoObject } from './types';
 
 export type QueryResult<A, K> = {
   readonly records: readonly A[];
+  /**
+   * @deprecated Use `nextStartKey` instead
+   */
   readonly lastSortKey?: K;
+  readonly nextStartKey?: DynamoObject;
 };
 
 export type ScanResult<A, H, K> = {
   readonly records: readonly A[];
+  /**
+   * @deprecated Use `nextStartKey` instead
+   */
   readonly lastHashKey?: H;
+  /**
+   * @deprecated Use `nextStartKey` instead
+   */
   readonly lastSortKey?: K;
+  readonly nextStartKey?: DynamoObject;
 };
 
 export type SortKeyCompare<RKV> =
@@ -31,7 +42,11 @@ export type QueryOpts<
 > = {
   readonly pageSize?: number;
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
+  /**
+   * @deprecated Use `startKey` instead
+   */
   readonly fromSortKey?: A[RK];
+  readonly startKey?: DynamoObject;
   readonly schema?: DynamoMarshallerFor<A>;
   readonly descending?: boolean;
   readonly consistentRead?: boolean;
@@ -45,8 +60,15 @@ export type ScanOpts<
 > = {
   readonly pageSize?: number;
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
+  /**
+   * @deprecated Use `startKey` instead
+   */
   readonly fromHashKey?: A[HK];
+  /**
+   * @deprecated Use `startKey` instead
+   */
   readonly fromSortKey?: A[RK];
+  readonly startKey?: DynamoObject;
   readonly schema?: DynamoMarshallerFor<A>;
   readonly consistentRead?: boolean;
   readonly filterExpression?: ConditionExpression<A>;
