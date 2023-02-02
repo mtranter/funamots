@@ -387,6 +387,22 @@ describe('Table', () => {
       expect(result2.records).toEqual(testObjects.slice(10));
     });
 
+    it('Should put and query with nextSortKey object', async () => {
+      const testObjects = Array.from(Array(20).keys()).map((i) => ({
+        hash: '1',
+        sort: i,
+      }));
+
+      await Promise.all(testObjects.map((o) => compoundTable.put(o)));
+      const result = await compoundTable.query('1', { pageSize: 10 });
+      expect(result.records).toEqual(testObjects.slice(0, 10));
+      const result2 = await compoundTable.query('1', {
+        pageSize: 10,
+        startKey: result.nextStartKey,
+      });
+      expect(result2.records).toEqual(testObjects.slice(10));
+    });
+
     it('Should put and query with sort key expression', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',
