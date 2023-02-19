@@ -1,5 +1,8 @@
-/* eslint-disable functional/prefer-readonly-type */
 /* eslint-disable @typescript-eslint/ban-types */
+/* eslint-disable functional/prefer-readonly-type */
+
+import { tableBuilder } from '..';
+
 type ValueOf<T> = T[keyof T];
 
 // Types
@@ -49,10 +52,12 @@ export type RecursivePartial<T> = {
 };
 
 type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-export type NestedKeyOf<T, D extends number = 3> = [D] extends [never]
+export type NestedKeyOf<T, D extends number = 7> = [D] extends [never]
   ? never
   : T extends object
-  ? { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
+  ?
+      | (keyof T & string)
+      | { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
   : '';
 
 // eslint-disable-next-line functional/no-return-void, @typescript-eslint/no-explicit-any
@@ -83,6 +88,10 @@ type _NestedPick<
   ? Agg & { [s in K]: A[K] }
   : never;
 
-export type NestedPick<A, K extends string> = UnionToIntersection<
-  _NestedPick<A, K>
+type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & {};
+
+export type NestedPick<A, K extends string> = Prettify<
+  UnionToIntersection<_NestedPick<A, K>>
 >;
