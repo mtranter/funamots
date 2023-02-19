@@ -20,6 +20,7 @@ describe('tableBuilder', () => {
       .withKey('partition', 'sort')
       .withGlobalIndex('gsi_by_gsip', 'gsip', 'gsis')
       .withLocalIndex('local', 'lsis');
+
     const tableDef: TableDefinition<
       Dto,
       any,
