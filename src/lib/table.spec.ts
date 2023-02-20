@@ -11,6 +11,7 @@ import {
   OR,
 } from './conditions';
 import { Marshallers } from './marshalling';
+import { ifNotExists } from './table';
 import { tableBuilder } from './table-builder';
 
 jest.setTimeout(60000); // in milliseconds
@@ -74,6 +75,22 @@ describe('Table', () => {
         returnValue: 'UPDATED_OLD',
       });
       expect(result2).toEqual({ name: 'Fred' });
+    });
+    it('For a non-pre-existing value should set a value if not exists, using ifNotExists', async () => {
+      const key = { hash: '247' };
+      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      await simpleTable.set(key, dto);
+      const saved = await simpleTable.get(key);
+      expect(saved).toEqual({ hash: '247', name: 'Fred', age: 30 });
+    });
+    it('For a pre-existing value should NOT set a value if exists, using ifNotExists', async () => {
+      const key = { hash: '111222' };
+      const initialDto = { ...key, name: 'John' };
+      await simpleTable.put(initialDto);
+      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      await simpleTable.set(key, dto);
+      const saved = await simpleTable.get(key);
+      expect(saved).toEqual({ hash: '111222', name: 'John', age: 30 });
     });
 
     it('Should put and set and return updated new values with a condition expression', async () => {
