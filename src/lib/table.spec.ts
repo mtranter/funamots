@@ -241,7 +241,7 @@ describe('Table', () => {
     });
   });
   describe('with compound key', () => {
-    type CompoundKey = {
+    type DtoWithCompositeKey = {
       readonly hash: string;
       readonly sort: number;
       readonly gsihash?: string;
@@ -258,7 +258,7 @@ describe('Table', () => {
       };
     };
 
-    const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
+    const compoundTable = tableBuilder<DtoWithCompositeKey>('CompoundTable')
       .withKey('hash', 'sort')
       .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
       .withLocalIndex('ix_by_lsirange', 'lsirange')
@@ -466,8 +466,8 @@ describe('Table', () => {
 
       await compoundTable.transactPut(testObjects.map((item) => ({ item })));
       const result = await compoundTable.query('1234', {
-        filterExpression: AND<CompoundKey>(
-          OR(
+        filterExpression: AND<DtoWithCompositeKey>(
+          OR<DtoWithCompositeKey>(
             {
               lsirange: { '=': 5 },
               name: beginsWith('Fre'),
@@ -498,7 +498,7 @@ describe('Table', () => {
       await Promise.all(
         testObjects.map((o) =>
           compoundTable.put(o, {
-            conditionExpression: OR<CompoundKey>(
+            conditionExpression: OR<DtoWithCompositeKey>(
               {
                 documentVersionId: attributeNotExists(),
               },
@@ -658,7 +658,7 @@ describe('Table', () => {
       expect(result2.records.length).toBeGreaterThanOrEqual(15);
       expect(result2.records).toEqual(
         // eslint-disable-next-line functional/prefer-readonly-type
-        expect.not.arrayContaining(result.records as CompoundKey[])
+        expect.not.arrayContaining(result.records as DtoWithCompositeKey[])
       );
     });
     it('Should scan with filtering', async () => {
@@ -673,6 +673,23 @@ describe('Table', () => {
         filterExpression: { hash: { '=': 'scan test paging' } },
       });
       expect(result.records.length).toEqual(20);
+    });
+
+    it('For a non-pre-existing value should set a value if not exists, using ifNotExists', async () => {
+      const key = { hash: '247aaa', sort: 1 };
+      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      await compoundTable.set(key, dto);
+      const saved = await compoundTable.get(key);
+      expect(saved).toEqual({ ...key, name: 'Fred', age: 30 });
+    });
+    it('For a pre-existing value should NOT set a value if exists, using ifNotExists', async () => {
+      const key = { hash: '247aaa', sort: 1 };
+      const initialDto = { ...key, name: 'John' };
+      await compoundTable.put(initialDto);
+      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      await compoundTable.set(key, dto);
+      const saved = await compoundTable.get(key);
+      expect(saved).toEqual({ ...key, name: 'John', age: 30 });
     });
   });
 });
