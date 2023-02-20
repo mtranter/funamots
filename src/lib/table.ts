@@ -2,6 +2,7 @@ import { DynamoDB as DynamoDb } from '@aws-sdk/client-dynamodb';
 import {
   AttributePath,
   ExpressionAttributes,
+  FunctionExpression,
   PathElement,
   UpdateExpression,
 } from '@awslabs-community-fork/dynamodb-expressions';
@@ -42,6 +43,17 @@ type UpdateReturnValue =
   | 'ALL_NEW'
   | 'UPDATED_NEW';
 
+const IfNotExistsKey = Symbol('IF_NOT_EXISTS');
+type IfNotExists<O> = {
+  readonly ifNotExists: O;
+  readonly [IfNotExistsKey]: true;
+};
+
+export const ifNotExists = <O>(o: O): IfNotExists<O> => ({
+  ifNotExists: o,
+  [IfNotExistsKey]: true,
+});
+
 type SetOpts<A extends DynamoObject, RV extends UpdateReturnValue> = {
   readonly returnValue?: RV;
   readonly conditionExpression?: ConditionExpression<A>;
@@ -72,6 +84,13 @@ type TransactWriteItem<I, CE> = {
   readonly conditionExpression?: ConditionExpression<CE>;
 };
 
+type SetTarget<T, N extends boolean = false> =
+  | T
+  | (N extends false ? never : IfNotExists<T>)
+  | {
+      readonly [K in keyof T]: SetTarget<T[K], true>;
+    };
+
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
   A extends DynamoObject,
@@ -100,7 +119,7 @@ export type Table<
   readonly put: <AA extends A>(a: AA, opts?: PutOpts<A>) => Promise<void>;
   readonly set: <RV extends UpdateReturnValue = 'NONE'>(
     key: Pick<A, HK | RK>,
-    updates: RecursivePartial<Omit<A, HK | RK>>,
+    updates: RecursivePartial<SetTarget<Omit<A, HK | RK>>>,
     opts?: SetOpts<Omit<A, HK | RK>, RV>
   ) => Promise<SetResponse<A, RV>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
@@ -119,7 +138,7 @@ export type Table<
       readonly deletes: ReadonlyArray<TransactWriteItem<Pick<A, HK | RK>, A>>;
       readonly updates: ReadonlyArray<{
         readonly key: Pick<A, HK | RK>;
-        readonly updates: Partial<Omit<A, HK | RK>>;
+        readonly updates: RecursivePartial<SetTarget<Omit<A, HK | RK>>>;
         readonly conditionExpression?: ConditionExpression<A>;
       }>;
     }>
@@ -156,14 +175,25 @@ const extractKey = (
   rk?: string
 ) => Object.assign({}, { [hk]: obj[hk] }, rk && { [rk]: obj[rk] });
 
-const serializeSetAction = (
-  r: Record<string, DynamoPrimitive>,
+const serializeSetAction = <A>(
+  r: SetTarget<A>,
   path: readonly PathElement[] = [],
   ue = new UpdateExpression()
 ): UpdateExpression =>
   Object.keys(r).reduce((p, n) => {
-    const toSet = r[n];
-    if (!Array.isArray(toSet) && typeof toSet === 'object') {
+    const toSet = (r as Record<string, unknown>)[n] as
+      | DynamoObject
+      | { readonly ifNotExists: DynamoObject };
+    if (toSet?.ifNotExists) {
+      const attPath = new AttributePath([
+        ...path,
+        { type: 'AttributeName', name: n } as const,
+      ]);
+      p.set(
+        attPath,
+        new FunctionExpression('if_not_exists', attPath, toSet.ifNotExists)
+      );
+    } else if (!Array.isArray(toSet) && typeof toSet === 'object') {
       serializeSetAction(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         toSet as any,
