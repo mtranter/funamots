@@ -23,13 +23,16 @@ import {
   TableDefinition,
 } from './table-builder';
 import {
+  DynamoKeyTypes,
   DynamoObject,
   DynamoPrimitive,
   DynamoValueKeys,
   NestedKeyOf,
   NestedPick,
+  Prettify,
   RecursivePartial,
   RequireAtLeastOne,
+  UnionToIntersection,
 } from './types';
 
 type UpdateReturnValue =
@@ -87,6 +90,72 @@ type SetTarget<T, N extends boolean = false> =
       readonly [K in keyof T]: SetTarget<T[K], true>;
     };
 
+type AttributeDynamoTypeMap<S extends DynamoKeyTypes> = S extends string
+  ? 'S'
+  : S extends number
+  ? 'N'
+  : S extends ArrayBuffer | ArrayBufferView
+  ? 'B'
+  : never;
+
+type AttributeDefinitions<
+  T extends DynamoObject,
+  HK extends string,
+  RK extends string
+> = (T[HK] extends DynamoKeyTypes
+  ? { readonly [k in HK]: AttributeDynamoTypeMap<T[HK]> }
+  : // eslint-disable-next-line @typescript-eslint/ban-types
+    {}) &
+  (T[RK] extends DynamoKeyTypes
+    ? { readonly [k in RK]: AttributeDynamoTypeMap<T[RK]> }
+    : // eslint-disable-next-line @typescript-eslint/ban-types
+      {});
+
+type IndexeAttributes<T extends IndexDefinitions> = T extends Record<
+  infer _,
+  infer IX
+>
+  ? IX extends IndexDefinition<infer A, infer HK, infer RK>
+    ? AttributeDefinitions<A, HK, RK>
+    : never
+  : never;
+
+type CreateTableAttributeDefinitions<
+  T extends DynamoObject,
+  HK extends string,
+  RK extends string,
+  Ixs extends IndexDefinitions
+> = Prettify<
+  AttributeDefinitions<T, HK, RK> & UnionToIntersection<IndexeAttributes<Ixs>>
+>;
+
+type CreateTableIndexDefinition = {
+  readonly provisionedThroughput: ProvisionedThroughput;
+};
+
+type ProvisionedThroughput = {
+  readonly read: number;
+  readonly write: number;
+};
+type BillingMode = 'PROVISIONED' | 'PAY_PER_REQUEST';
+type CreateProps<
+  A extends DynamoObject,
+  HK extends string,
+  RK extends string,
+  Ixs extends IndexDefinitions,
+  BM extends BillingMode
+> = {
+  readonly billingMode: BM;
+  readonly keyDefinitions: CreateTableAttributeDefinitions<A, HK, RK, Ixs>;
+} & (BM extends 'PROVISIONED'
+  ? {
+      readonly provisionedThroughput: ProvisionedThroughput;
+      readonly indexDefinitions: {
+        readonly [k in keyof Ixs]?: CreateTableIndexDefinition;
+      };
+    }
+  : // eslint-disable-next-line @typescript-eslint/ban-types
+    {});
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
   A extends DynamoObject,
@@ -94,8 +163,12 @@ export type Table<
   RK extends string,
   Ixs extends IndexDefinitions
 > = {
+  readonly createTable: <BM extends BillingMode>(
+    props: CreateProps<A, HK, RK, Ixs, BM>
+  ) => Promise<void>;
+  readonly deleteTable: () => Promise<void>;
   readonly get: <AA extends A, Keys extends NestedKeyOf<AA> = NestedKeyOf<AA>>(
-    hk: Pick<A, HK | RK>,
+    hk: Prettify<Pick<A, HK | RK>>,
     opts?: {
       readonly consistentRead?: boolean;
       readonly marshaller?: DynamoMarshallerFor<A>;
@@ -103,18 +176,18 @@ export type Table<
     }
   ) => Promise<NestedPick<AA, Keys> | null>;
   readonly batchGet: <Keys extends NestedKeyOf<A> = NestedKeyOf<A>>(
-    hks: readonly Pick<A, HK | RK>[],
+    hks: readonly Prettify<Pick<A, HK | RK>>[],
     opts?: {
       readonly consistentRead?: boolean;
       readonly keys?: readonly Keys[];
     }
   ) => Promise<readonly NestedPick<A, Keys>[]>;
   readonly transactGet: (
-    hks: readonly Pick<A, HK | RK>[]
+    hks: readonly Prettify<Pick<A, HK | RK>>[]
   ) => Promise<readonly A[]>;
   readonly put: <AA extends A>(a: AA, opts?: PutOpts<A>) => Promise<void>;
   readonly set: <RV extends UpdateReturnValue = 'NONE'>(
-    key: Pick<A, HK | RK>,
+    key: Prettify<Pick<A, HK | RK>>,
     updates: RecursivePartial<SetTarget<Omit<A, HK | RK>>>,
     opts?: SetOpts<Omit<A, HK | RK>, RV>
   ) => Promise<SetResponse<A, RV>>;
@@ -389,6 +462,133 @@ export const Table = <
     indexes,
   } = tableDefintion;
   const retval: TableFactoryResult<T, PartitionKey, SortKey, Ixs> = {
+    createTable: async (props) => {
+      const _props = props as CreateProps<
+        T,
+        PartitionKey,
+        SortKey,
+        Ixs,
+        'PROVISIONED'
+      >;
+      const lsis = Object.entries(tableDefintion.indexes).filter(
+        (k) => k[1].indexType === 'local'
+      );
+      const gsis = Object.entries(tableDefintion.indexes).filter(
+        (k) => k[1].indexType === 'global'
+      );
+
+      const request: DynamoDb.Types.CreateTableInput = {
+        TableName: tableName,
+        BillingMode: _props.billingMode,
+        AttributeDefinitions: Object.entries(props.keyDefinitions).map(
+          ([name, type]) => ({
+            AttributeName: name,
+            AttributeType: type as string,
+          })
+        ),
+        KeySchema: [
+          {
+            AttributeName: hashKey,
+            KeyType: 'HASH',
+          },
+          ...(sortKey
+            ? [
+                {
+                  AttributeName: sortKey,
+                  KeyType: 'RANGE',
+                },
+              ]
+            : []),
+        ],
+      };
+      const withLsis =
+        lsis.length === 0
+          ? request
+          : {
+              ...request,
+              LocalSecondaryIndexes:
+                lsis.length === 0
+                  ? undefined
+                  : lsis.map(([name, { sortKey: sk }]) => ({
+                      IndexName: name,
+                      KeySchema: [
+                        {
+                          AttributeName: hashKey,
+                          KeyType: 'HASH',
+                        },
+                        {
+                          AttributeName: sk,
+                          KeyType: 'RANGE',
+                        },
+                      ],
+                      Projection: {
+                        ProjectionType: 'ALL',
+                      },
+                    })),
+            };
+      const withGsi =
+        gsis.length === 0
+          ? withLsis
+          : {
+              ...withLsis,
+              GlobalSecondaryIndexes:
+                gsis.length === 0
+                  ? undefined
+                  : gsis.map(([name, { partitionKey: pk, sortKey: sk }]) => ({
+                      IndexName: name,
+                      ...(_props.indexDefinitions?.[name]
+                        ?.provisionedThroughput && {
+                        ProvisionedThroughput: _props.indexDefinitions?.[name]
+                          ?.provisionedThroughput && {
+                          ReadCapacityUnits:
+                            _props.indexDefinitions?.[name]
+                              ?.provisionedThroughput.read,
+                          WriteCapacityUnits:
+                            _props.indexDefinitions?.[name]
+                              ?.provisionedThroughput.write,
+                        },
+                      }),
+                      KeySchema: [
+                        {
+                          AttributeName: pk,
+                          KeyType: 'HASH',
+                        },
+                        {
+                          AttributeName: sk,
+                          KeyType: 'RANGE',
+                        },
+                      ],
+                      Projection: {
+                        ProjectionType: 'ALL',
+                      },
+                    })),
+            };
+      const withProvisioned =
+        _props.billingMode !== 'PROVISIONED'
+          ? withGsi
+          : {
+              ...withGsi,
+
+              ProvisionedThroughput: _props.provisionedThroughput
+                ? {
+                    ReadCapacityUnits: _props.provisionedThroughput.read,
+                    WriteCapacityUnits: _props.provisionedThroughput.write,
+                  }
+                : undefined,
+            };
+      await dynamo
+        .createTable(withProvisioned)
+        .promise()
+        .catch((e) => {
+          console.error(e);
+          return Promise.reject(e);
+        });
+    },
+    deleteTable: () =>
+      dynamo
+        .deleteTable({ TableName: tableName })
+        .promise()
+        .then(() => void 0),
     get: (hkv, opts) => {
       const keys = (opts?.keys || []) as readonly string[];
       const keysSupplied = keys.length > 0;

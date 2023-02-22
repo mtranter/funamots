@@ -23,6 +23,7 @@ export type IndexDefinition<
   readonly name: Name;
   readonly partitionKey: PartitionKey;
   readonly sortKey: SortKey;
+  readonly indexType: 'global' | 'local';
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,7 +135,14 @@ const _tableBuilder = <
         ...tableDefinition,
         indexes: {
           ...tableDefinition.indexes,
-          ...{ [name]: { name: name, partitionKey: pk, sortKey: sk } },
+          ...{
+            [name]: {
+              name: name,
+              partitionKey: pk,
+              sortKey: sk,
+              indexType: 'global',
+            },
+          },
         },
       }),
     withLocalIndex: (name, sk) =>
@@ -147,6 +155,7 @@ const _tableBuilder = <
               name: name,
               partitionKey: tableDefinition.partitionKey,
               sortKey: sk,
+              indexType: 'local',
             },
           },
         },

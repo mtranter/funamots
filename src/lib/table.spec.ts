@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DynamoDB } from 'aws-sdk';
 
@@ -11,12 +12,92 @@ import {
   OR,
 } from './conditions';
 import { Marshallers } from './marshalling';
-import { ifNotExists } from './table';
-import { tableBuilder } from './table-builder';
+import { ifNotExists, QueryableTable } from './table';
+import { IndexDefinition, tableBuilder } from './table-builder';
 
 jest.setTimeout(60000); // in milliseconds
 
+const client = new DynamoDB({
+  endpoint: 'http://localhost:8000',
+  region: 'local-env',
+});
+
+const randomAlphaNumeric = (length: number) =>
+  Math.random()
+    .toString(36)
+    .substring(2, length + 2);
+
 describe('Table', () => {
+  describe('create table', () => {
+    const tableName = 'TestTable';
+    beforeEach(async () => {
+      await client
+        .deleteTable({ TableName: tableName })
+        .promise()
+        .catch(() => void 0);
+    });
+    it('should create a complex table', async () => {
+      type Dto = {
+        readonly hash: string;
+        readonly sort: number;
+        readonly lsiSort: number;
+        readonly gsiHash: string;
+        readonly gsiSort: number;
+      };
+      const table = tableBuilder<Dto>(tableName)
+        .withKey('hash', 'sort')
+        .withLocalIndex('lsi1', 'lsiSort')
+        .withGlobalIndex('gsi1', 'gsiHash', 'gsiSort')
+        .build({ client });
+
+      await table.createTable({
+        billingMode: 'PAY_PER_REQUEST',
+        keyDefinitions: {
+          hash: 'S',
+          sort: 'N',
+          lsiSort: 'N',
+          gsiHash: 'S',
+          gsiSort: 'N',
+        },
+      });
+      const described = await client
+        .describeTable({ TableName: tableName })
+        .promise();
+      expect(described.Table).toBeTruthy();
+      expect(described.Table.TableName).toEqual(tableName);
+      expect(described.Table.KeySchema).toEqual([
+        { AttributeName: 'hash', KeyType: 'HASH' },
+        { AttributeName: 'sort', KeyType: 'RANGE' },
+      ]);
+      expect(described.Table.AttributeDefinitions).toEqual([
+        { AttributeName: 'hash', AttributeType: 'S' },
+        { AttributeName: 'sort', AttributeType: 'N' },
+        { AttributeName: 'lsiSort', AttributeType: 'N' },
+        { AttributeName: 'gsiHash', AttributeType: 'S' },
+        { AttributeName: 'gsiSort', AttributeType: 'N' },
+      ]);
+      expect(described.Table.GlobalSecondaryIndexes).toMatchObject([
+        {
+          IndexName: 'gsi1',
+          KeySchema: [
+            { AttributeName: 'gsiHash', KeyType: 'HASH' },
+            { AttributeName: 'gsiSort', KeyType: 'RANGE' },
+          ],
+          Projection: { ProjectionType: 'ALL' },
+        },
+      ]);
+      expect(described.Table.LocalSecondaryIndexes).toMatchObject([
+        {
+          IndexName: 'lsi1',
+          KeySchema: [
+            { AttributeName: 'hash', KeyType: 'HASH' },
+            { AttributeName: 'lsiSort', KeyType: 'RANGE' },
+          ],
+          Projection: { ProjectionType: 'ALL' },
+        },
+      ]);
+    });
+  });
   describe('with simple key', () => {
     type SimpleKey = {
       readonly hash: string;
@@ -26,16 +107,26 @@ describe('Table', () => {
       readonly name?: string;
       readonly age?: number;
     };
+    // eslint-disable-next-line functional/no-let
+    let simpleTable: QueryableTable<SimpleKey, 'hash', undefined, {}>;
 
-    const simpleTable = tableBuilder<SimpleKey>('SimpleTable')
-      .withKey('hash')
-      .build({
-        client: new DynamoDB({
-          endpoint: 'localhost:8000',
-          sslEnabled: false,
-          region: 'local-env',
-        }),
+    beforeEach(async () => {
+      const randomTableName = `SimpleTable${randomAlphaNumeric(9)}`;
+      simpleTable = tableBuilder<SimpleKey>(randomTableName)
+        .withKey('hash')
+        .build({
+          client,
+        });
+      await simpleTable.createTable({
+        billingMode: 'PAY_PER_REQUEST',
+        keyDefinitions: {
+          hash: 'S',
+        },
       });
+    });
+    afterEach(async () => {
+      await simpleTable.deleteTable();
+    });
     it('Should put and get', async () => {
       const value = { hash: '1' };
       await simpleTable.put(value);
@@ -241,7 +332,7 @@ describe('Table', () => {
     });
   });
   describe('with compound key', () => {
-    type CompoundKey = {
+    type DtoWithCompositeKey = {
       readonly hash: string;
       readonly sort: number;
       readonly gsihash?: string;
@@ -258,15 +349,49 @@ describe('Table', () => {
       };
     };
 
-    const compoundTable = tableBuilder<CompoundKey>('CompoundTable')
-      .withKey('hash', 'sort')
-      .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
-      .withLocalIndex('ix_by_lsirange', 'lsirange')
-      .build({
-        endpoint: 'localhost:8000',
-        sslEnabled: false,
-        region: 'local-env',
+    // eslint-disable-next-line functional/no-let
+    let compoundTable: QueryableTable<
+      DtoWithCompositeKey,
+      'hash',
+      'sort',
+      {
+        readonly ix_by_gsihash: IndexDefinition<
+          DtoWithCompositeKey,
+          'gsihash',
+          'gsirange'
+        >;
+        readonly ix_by_lsirange: IndexDefinition<
+          DtoWithCompositeKey,
+          'hash',
+          'lsirange'
+        >;
+      }
+    >;
+
+    beforeEach(async () => {
+      const tableName = randomAlphaNumeric(10);
+      compoundTable = tableBuilder<DtoWithCompositeKey>(
+        `CompoundTable${tableName}`
+      )
+        .withKey('hash', 'sort')
+        .withGlobalIndex('ix_by_gsihash', 'gsihash', 'gsirange')
+        .withLocalIndex('ix_by_lsirange', 'lsirange')
+        .build({ client });
+      await compoundTable.createTable({
+        billingMode: 'PAY_PER_REQUEST',
+        keyDefinitions: {
+          hash: 'S',
+          sort: 'N',
+          gsihash: 'S',
+          gsirange: 'S',
+          lsirange: 'N',
+        },
       });
+    });
+
+    afterEach(async () => {
+      await compoundTable.deleteTable();
+    });
 
     it('Should put and get', async () => {
       const key = { hash: '1', sort: 1, lsirange: 1 };
@@ -466,8 +591,8 @@ describe('Table', () => {
 
       await compoundTable.transactPut(testObjects.map((item) => ({ item })));
       const result = await compoundTable.query('1234', {
-        filterExpression: AND<CompoundKey>(
-          OR(
+        filterExpression: AND<DtoWithCompositeKey>(
+          OR<DtoWithCompositeKey>(
             {
               lsirange: { '=': 5 },
               name: beginsWith('Fre'),
@@ -498,7 +623,7 @@ describe('Table', () => {
       await Promise.all(
         testObjects.map((o) =>
           compoundTable.put(o, {
-            conditionExpression: OR<CompoundKey>(
+            conditionExpression: OR<DtoWithCompositeKey>(
               {
                 documentVersionId: attributeNotExists(),
               },
@@ -658,7 +783,7 @@ describe('Table', () => {
       expect(result2.records.length).toBeGreaterThanOrEqual(15);
       expect(result2.records).toEqual(
         // eslint-disable-next-line functional/prefer-readonly-type
-        expect.not.arrayContaining(result.records as CompoundKey[])
+        expect.not.arrayContaining(result.records as DtoWithCompositeKey[])
       );
     });
     it('Should scan with filtering', async () => {
