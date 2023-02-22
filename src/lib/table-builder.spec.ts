@@ -27,15 +27,17 @@ describe('tableBuilder', () => {
       any,
       Record<string, never>
     > = (builder as any)._debug();
-    expect(tableDef).toEqual({
+    expect(tableDef).toMatchObject({
       indexes: {
         gsi_by_gsip: {
           name: 'gsi_by_gsip',
+          indexType: 'global',
           partitionKey: 'gsip',
           sortKey: 'gsis',
         },
         local: {
           name: 'local',
+          indexType: 'local',
           partitionKey: 'partition',
           sortKey: 'lsis',
         },

@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable functional/prefer-readonly-type */
 
-import { tableBuilder } from '..';
-
 type ValueOf<T> = T[keyof T];
 
 // Types
@@ -60,8 +58,13 @@ export type NestedKeyOf<T, D extends number = 7> = [D] extends [never]
       | { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
   : '';
 
-// eslint-disable-next-line functional/no-return-void, @typescript-eslint/no-explicit-any
-type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
+export type UnionToIntersection<U> = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  U extends any
+    ? // eslint-disable-next-line functional/no-return-void
+      (k: U) => void
+    : never
+) extends (
   k: infer I
   // eslint-disable-next-line functional/no-return-void
 ) => void
@@ -88,7 +91,7 @@ type _NestedPick<
   ? Agg & { [s in K]: A[K] }
   : never;
 
-type Prettify<T> = {
+export type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
 
