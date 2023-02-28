@@ -103,11 +103,11 @@ type AttributeDefinitions<
   HK extends string,
   RK extends string
 > = (T[HK] extends DynamoKeyTypes
-  ? { readonly [k in HK]: AttributeDynamoTypeMap<T[HK]> }
+  ? { readonly [k in HK]-?: AttributeDynamoTypeMap<T[HK]> }
   : // eslint-disable-next-line @typescript-eslint/ban-types
     {}) &
   (T[RK] extends DynamoKeyTypes
-    ? { readonly [k in RK]: AttributeDynamoTypeMap<T[RK]> }
+    ? { readonly [k in RK]-?: AttributeDynamoTypeMap<T[RK]> }
     : // eslint-disable-next-line @typescript-eslint/ban-types
       {});
 
