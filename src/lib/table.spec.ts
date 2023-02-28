@@ -39,8 +39,8 @@ describe('Table', () => {
         readonly hash: string;
         readonly sort: number;
         readonly lsiSort: number;
-        readonly gsiHash: string;
-        readonly gsiSort: number;
+        readonly gsiHash?: string;
+        readonly gsiSort?: number;
       };
       const table = tableBuilder<Dto>(tableName)
         .withKey('hash', 'sort')
