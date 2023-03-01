@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
 
@@ -12,7 +11,7 @@ import {
   OR,
 } from './conditions';
 import { Marshallers } from './marshalling';
-import { ifNotExists, QueryableTable } from './table';
+import { ifNotExists, QueryableTable, Table } from './table';
 import { IndexDefinition, tableBuilder } from './table-builder';
 
 jest.setTimeout(60000); // in milliseconds
@@ -60,19 +59,19 @@ describe('Table', () => {
       });
       const described = await client.describeTable({ TableName: tableName });
       expect(described.Table).toBeTruthy();
-      expect(described.Table.TableName).toEqual(tableName);
-      expect(described.Table.KeySchema).toEqual([
+      expect(described?.Table?.TableName).toEqual(tableName);
+      expect(described?.Table?.KeySchema).toEqual([
         { AttributeName: 'hash', KeyType: 'HASH' },
         { AttributeName: 'sort', KeyType: 'RANGE' },
       ]);
-      expect(described.Table.AttributeDefinitions).toEqual([
+      expect(described?.Table?.AttributeDefinitions).toEqual([
         { AttributeName: 'hash', AttributeType: 'S' },
         { AttributeName: 'sort', AttributeType: 'N' },
         { AttributeName: 'lsiSort', AttributeType: 'N' },
         { AttributeName: 'gsiHash', AttributeType: 'S' },
         { AttributeName: 'gsiSort', AttributeType: 'N' },
       ]);
-      expect(described.Table.GlobalSecondaryIndexes).toMatchObject([
+      expect(described?.Table?.GlobalSecondaryIndexes).toMatchObject([
         {
           IndexName: 'gsi1',
           KeySchema: [
@@ -82,7 +81,7 @@ describe('Table', () => {
           Projection: { ProjectionType: 'ALL' },
         },
       ]);
-      expect(described.Table.LocalSecondaryIndexes).toMatchObject([
+      expect(described?.Table?.LocalSecondaryIndexes).toMatchObject([
         {
           IndexName: 'lsi1',
           KeySchema: [
@@ -105,7 +104,7 @@ describe('Table', () => {
     };
 
     // eslint-disable-next-line functional/no-let
-    let simpleTable: QueryableTable<SimpleKey, 'hash', undefined, {}>;
+    let simpleTable: Table<SimpleKey, 'hash', never, {}>;
 
     beforeEach(async () => {
       const randomTableName = `SimpleTable${randomAlphaNumeric(9)}`;
@@ -256,7 +255,11 @@ describe('Table', () => {
       const result = await simpleTable.get(key, {
         marshaller: {
           hash: Marshallers.string,
-          name: Marshallers.string,
+          name: Marshallers.string.optional(),
+          age: Marshallers.number.optional(),
+          map: Marshallers.map({
+            name: Marshallers.string,
+          }).optional(),
         },
       });
       expect(result).toEqual(key);
@@ -419,7 +422,7 @@ describe('Table', () => {
         });
       };
       it('Should get selected keys', async () => {
-        const result = await setup();
+        const result: any = await setup();
         expect(result?.gsihash).toEqual(key.gsihash);
         expect(result?.sort).toEqual(key.sort);
         expect(result?.complexSubDoc.subSubDoc.id).toEqual('123');
@@ -602,7 +605,7 @@ describe('Table', () => {
       expect(result.records.length).toBe(11);
       expect(
         result.records.every(
-          (r) =>
+          (r: any) =>
             r.lsirange === 5 ||
             r.name === 'Fred' ||
             !(7 > r.lsirange && r.lsirange > 13)
@@ -683,7 +686,7 @@ describe('Table', () => {
         sortKeyExpression: { '>': 5 },
       });
       expect(
-        [...result.records].sort((a, b) => a.lsirange - b.lsirange)
+        [...result.records].sort((a: any, b: any) => a.lsirange - b.lsirange)
       ).toEqual(
         [...testObjects.filter((a) => a.lsirange > 5)].sort(
           (a, b) => a.lsirange - b.lsirange

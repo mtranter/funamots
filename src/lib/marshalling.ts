@@ -35,7 +35,7 @@ export const marshaller = {
 export type Marshaller = typeof marshaller;
 
 export type DynamoMarshallerFor<T extends DynamoObject> = {
-  readonly [k in keyof T]: DynamoMarshaller<T[k]>;
+  readonly [k in keyof T]-?: DynamoMarshaller<T[k]>;
 };
 
 const buildMarshaller: <T extends DynamoPrimitive>(

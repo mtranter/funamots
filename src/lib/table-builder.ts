@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable functional/no-method-signature */
 import { DynamoDB, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
 import { marshallOptions, unmarshallOptions } from '@aws-sdk/util-dynamodb';
@@ -17,8 +16,8 @@ export type Logger = {
 
 export type IndexDefinition<
   T extends DynamoObject,
-  PartitionKey extends string & keyof T = never,
-  SortKey extends string & keyof T = never
+  PartitionKey extends string & keyof T,
+  SortKey extends string & keyof T
 > = {
   readonly name: Name;
   readonly partitionKey: PartitionKey;
@@ -30,7 +29,10 @@ export type IndexDefinition<
 export type IndexDefinitions = Record<string, IndexDefinition<any, any, any>>;
 
 type WithKey<T extends DynamoObject> = {
-  withKey<PK extends string & keyof T, SK extends string & keyof T = undefined>(
+  withKey<
+    PK extends string & keyof T,
+    SK extends (string & keyof T) | undefined = undefined
+  >(
     pk: PK,
     sk?: SK
   ): TableBuilder<T, PK, SK, {}>;
@@ -39,13 +41,13 @@ type WithKey<T extends DynamoObject> = {
 type WithIndexes<
   T extends DynamoObject,
   PartitionKey extends string & keyof T,
-  SortKey extends string & keyof T,
+  SortKey extends (string & keyof T) | undefined,
   Ixs extends IndexDefinitions
 > = {
   withGlobalIndex<
     IxName extends Name,
-    PK extends string & Exclude<keyof T, PartitionKey> = never,
-    SK extends string & keyof T = never
+    PK extends string & Exclude<keyof T, PartitionKey>,
+    SK extends string & keyof T
   >(
     ixName: IxName,
     pk: PK,
@@ -79,8 +81,8 @@ export type DynamodbTableConfig = marshallOptions &
   };
 type Build<
   T extends DynamoObject,
-  PartitionKey extends string & keyof T = never,
-  SortKey extends string & keyof T = never,
+  PartitionKey extends string & keyof T,
+  SortKey extends (string & keyof T) | undefined,
   Ixs extends IndexDefinitions = {}
 > = {
   readonly build: (
@@ -90,13 +92,13 @@ type Build<
 
 export type TableBuilder<
   T extends DynamoObject,
-  PartitionKey extends string & keyof T = undefined,
-  SortKey extends string & keyof T = undefined,
+  PartitionKey extends string & keyof T,
+  SortKey extends (string & keyof T) | undefined = undefined,
   Ixs extends IndexDefinitions = {}
 > = {} & (PartitionKey extends undefined ? WithKey<T> : {}) &
   (SortKey extends undefined
     ? {}
-    : WithIndexes<T, PartitionKey, SortKey, Ixs>) &
+    : WithIndexes<T, PartitionKey, Exclude<SortKey, undefined>, Ixs>) &
   (PartitionKey extends undefined ? {} : Build<T, PartitionKey, SortKey, Ixs>);
 
 export type TableDefinition<
@@ -114,25 +116,38 @@ export type TableDefinition<
 const _tableBuilder = <
   T extends DynamoObject,
   PartitionKey extends string & keyof T,
-  SortKey extends string & keyof T,
+  SortKey extends (string & keyof T) | undefined,
   Ixs extends IndexDefinitions = {}
 >(
   tableDefinition: TableDefinition<T, PartitionKey, SortKey, Ixs>
 ): TableBuilder<T, PartitionKey, SortKey, Ixs> => {
   const withKey: WithKey<T> = {
-    withKey: (pk, sk) =>
-      _tableBuilder<T, typeof pk, typeof sk>({
+    withKey: <
+      PK extends string & keyof T,
+      SK extends (string & keyof T) | undefined = undefined
+    >(
+      pk: PK,
+      sk?: SK
+    ) =>
+      _tableBuilder<T, PK, SK>({
         ...tableDefinition,
         ...{ partitionKey: pk, sortKey: sk },
       }),
   };
   const build: Build<T, PartitionKey, SortKey, Ixs> = {
-    build: (cfg) => Table<T, PartitionKey, SortKey, Ixs>(tableDefinition, cfg),
+    build: (cfg) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      Table(tableDefinition as any, cfg) as TableFactoryResult<
+        T,
+        PartitionKey,
+        SortKey,
+        Ixs
+      >,
   };
 
   const withIndex: WithIndexes<T, PartitionKey, SortKey, Ixs> = {
     withGlobalIndex: (name, pk, sk) =>
-      _tableBuilder({
+      _tableBuilder<T, PartitionKey, SortKey, Ixs>({
         ...tableDefinition,
         indexes: {
           ...tableDefinition.indexes,
@@ -147,7 +162,7 @@ const _tableBuilder = <
         },
       }),
     withLocalIndex: (name, sk) =>
-      _tableBuilder({
+      _tableBuilder<T, PartitionKey, SortKey, Ixs>({
         ...tableDefinition,
         indexes: {
           ...tableDefinition.indexes,
@@ -172,9 +187,9 @@ const _tableBuilder = <
 
 export const tableBuilder = <T extends DynamoObject>(
   name: string
-): TableBuilder<T, undefined, undefined, {}> =>
-  _tableBuilder<T, undefined, undefined>({
+): WithKey<T> =>
+  _tableBuilder<T, keyof T & string, never>({
     name,
-    partitionKey: undefined,
+    partitionKey: undefined as never,
     indexes: {},
   });

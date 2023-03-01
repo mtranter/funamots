@@ -105,32 +105,36 @@ type AttributeDynamoTypeMap<S extends DynamoKeyTypes> = S extends string
 type AttributeDefinitions<
   T extends DynamoObject,
   HK extends string,
-  RK extends string
-> = (T[HK] extends DynamoKeyTypes
-  ? { readonly [k in HK]-?: AttributeDynamoTypeMap<T[HK]> }
-  : // eslint-disable-next-line @typescript-eslint/ban-types
-    {}) &
-  (T[RK] extends DynamoKeyTypes
-    ? { readonly [k in RK]-?: AttributeDynamoTypeMap<T[RK]> }
-    : // eslint-disable-next-line @typescript-eslint/ban-types
-      {});
+  RK extends string | never
+> = (NonNullable<T[HK]> extends DynamoKeyTypes
+  ? { readonly [k in HK]-?: AttributeDynamoTypeMap<NonNullable<T[HK]>> }
+  : {}) &
+  (NonNullable<T[RK]> extends DynamoKeyTypes
+    ? {
+        readonly [k in RK]-?: AttributeDynamoTypeMap<NonNullable<T[RK]>>;
+      }
+    : {});
 
-type IndexeAttributes<T extends IndexDefinitions> = T extends Record<
-  infer _,
-  infer IX
->
-  ? IX extends IndexDefinition<infer A, infer HK, infer RK>
+type IndexAttributes<T extends IndexDefinitions> = {
+  readonly [k in keyof T]: T[k] extends IndexDefinition<
+    infer A,
+    infer HK,
+    infer RK
+  >
     ? AttributeDefinitions<A, HK, RK>
-    : never
-  : never;
+    : undefined;
+}[keyof T];
 
 type CreateTableAttributeDefinitions<
   T extends DynamoObject,
   HK extends string,
-  RK extends string,
+  RK extends string | never,
   Ixs extends IndexDefinitions
 > = Prettify<
-  AttributeDefinitions<T, HK, RK> & UnionToIntersection<IndexeAttributes<Ixs>>
+  UnionToIntersection<
+    AttributeDefinitions<T, HK, RK> &
+      (IndexAttributes<Ixs> extends never ? {} : IndexAttributes<Ixs>)
+  >
 >;
 
 type CreateTableIndexDefinition = {
@@ -145,7 +149,7 @@ type BillingMode = 'PROVISIONED' | 'PAY_PER_REQUEST';
 type CreateProps<
   A extends DynamoObject,
   HK extends string,
-  RK extends string,
+  RK extends string | never,
   Ixs extends IndexDefinitions,
   BM extends BillingMode
 > = {
@@ -158,13 +162,12 @@ type CreateProps<
         readonly [k in keyof Ixs]?: CreateTableIndexDefinition;
       };
     }
-  : // eslint-disable-next-line @typescript-eslint/ban-types
-    {});
+  : {});
 // eslint-disable-next-line functional/no-mixed-type
 export type Table<
   A extends DynamoObject,
   HK extends string,
-  RK extends string,
+  RK extends string | never,
   Ixs extends IndexDefinitions
 > = {
   readonly createTable: <BM extends BillingMode>(
@@ -236,11 +239,11 @@ export type QueryableTable<
 export type TableFactoryResult<
   A extends DynamoObject,
   HK extends string,
-  RK extends string,
+  RK extends string | undefined,
   Ixs extends IndexDefinitions
-> = A[RK] extends never
-  ? Table<A, HK, RK, Ixs>
-  : QueryableTable<A, HK, RK, Ixs>;
+> = RK extends undefined
+  ? Table<A, HK, never, Ixs>
+  : QueryableTable<A, HK, Exclude<RK, undefined>, Ixs>;
 
 const extractKey = (
   obj: Record<string, DynamoPrimitive>,
@@ -253,7 +256,7 @@ const serializeSetAction = <A>(
   path: readonly PathElement[] = [],
   ue = new UpdateExpression()
 ): UpdateExpression =>
-  Object.keys(r).reduce((p, n) => {
+  Object.keys(r as {}).reduce((p, n) => {
     const toSet = (r as Record<string, unknown>)[n] as
       | DynamoObject
       | { readonly ifNotExists: DynamoObject };
@@ -342,11 +345,13 @@ const query = (
     })
     .then((r) => {
       const nextStartKey =
-        r.LastEvaluatedKey &&
-        rk &&
-        marshaller.unmarshallItem(r.LastEvaluatedKey);
+        !!r.LastEvaluatedKey && !!rk
+          ? marshaller.unmarshallItem(r.LastEvaluatedKey)
+          : undefined;
       return {
-        records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
+        records: r.Items
+          ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
+          : [],
         lastSortKey: nextStartKey?.[rk],
         nextStartKey,
       };
@@ -397,11 +402,13 @@ const scan = (
     })
     .then((r) => {
       const nextStartKey =
-        r.LastEvaluatedKey &&
-        rk &&
-        marshaller.unmarshallItem(r.LastEvaluatedKey);
+        !!r.LastEvaluatedKey && !!rk
+          ? marshaller.unmarshallItem(r.LastEvaluatedKey)
+          : undefined;
       return {
-        records: r.Items?.map(marshaller.unmarshallItem.bind(marshaller)),
+        records: r.Items
+          ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
+          : [],
         lastHashKey:
           r.LastEvaluatedKey &&
           marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
@@ -443,15 +450,15 @@ type Indexes<ID> = ID extends IndexDefinitions
 // prettier-ignoreclie
 export const Table = <
   T extends DynamoObject,
-  PartitionKey extends string & keyof T = never,
-  SortKey extends string & keyof T = never,
+  PartitionKey extends string & keyof T,
+  SortKey extends (string & keyof T) | never,
   Ixs extends IndexDefinitions = Record<string, never>
 >(
   tableDefintion: TableDefinition<T, PartitionKey, SortKey, Ixs>,
   config?: DynamodbTableConfig
 ): TableFactoryResult<T, PartitionKey, SortKey, Ixs> => {
-  const logger: Logger = config.logger || console;
-  const dynamo = config?.client || new DynamoDb(config);
+  const logger: Logger = config?.logger || console;
+  const dynamo = config?.client || new DynamoDb(config || {});
 
   const {
     name: tableName,
@@ -459,215 +466,360 @@ export const Table = <
     sortKey,
     indexes,
   } = tableDefintion;
-  const retval: TableFactoryResult<T, PartitionKey, SortKey, Ixs> = {
-    createTable: async (props) => {
-      const _props = props as CreateProps<
-        T,
-        PartitionKey,
-        SortKey,
-        Ixs,
-        'PROVISIONED'
-      >;
-      const lsis = Object.entries(tableDefintion.indexes).filter(
-        (k) => k[1].indexType === 'local'
-      );
-      const gsis = Object.entries(tableDefintion.indexes).filter(
-        (k) => k[1].indexType === 'global'
-      );
+  const createTable: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['createTable'] = async (props) => {
+    const _props = props as CreateProps<
+      T,
+      PartitionKey,
+      SortKey,
+      Ixs,
+      'PROVISIONED'
+    >;
+    const lsis = Object.entries(tableDefintion.indexes).filter(
+      (k) => k[1].indexType === 'local'
+    );
+    const gsis = Object.entries(tableDefintion.indexes).filter(
+      (k) => k[1].indexType === 'global'
+    );
 
-      const request = {
-        TableName: tableName,
-        BillingMode: _props.billingMode,
-        ProvisionedThroughput: _props.provisionedThroughput && {
-          ReadCapacityUnits: _props.provisionedThroughput.read,
-          WriteCapacityUnits: _props.provisionedThroughput.write,
+    const request = {
+      TableName: tableName,
+      BillingMode: _props.billingMode,
+      ProvisionedThroughput: _props.provisionedThroughput && {
+        ReadCapacityUnits: _props.provisionedThroughput.read,
+        WriteCapacityUnits: _props.provisionedThroughput.write,
+      },
+      AttributeDefinitions: Object.entries(props.keyDefinitions).map(
+        ([name, type]) => ({
+          AttributeName: name,
+          AttributeType: type as string,
+        })
+      ),
+      KeySchema: [
+        {
+          AttributeName: hashKey,
+          KeyType: 'HASH',
         },
-        AttributeDefinitions: Object.entries(props.keyDefinitions).map(
-          ([name, type]) => ({
-            AttributeName: name,
-            AttributeType: type as string,
-          })
-        ),
-        KeySchema: [
-          {
-            AttributeName: hashKey,
-            KeyType: 'HASH',
-          },
-          ...(sortKey
-            ? [
+        ...(sortKey
+          ? [
+              {
+                AttributeName: sortKey,
+                KeyType: 'RANGE',
+              },
+            ]
+          : []),
+      ],
+      LocalSecondaryIndexes:
+        lsis.length === 0
+          ? undefined
+          : lsis.map(([name, { sortKey: sk }]) => ({
+              IndexName: name,
+              KeySchema: [
                 {
-                  AttributeName: sortKey,
+                  AttributeName: hashKey,
+                  KeyType: 'HASH',
+                },
+                {
+                  AttributeName: sk,
                   KeyType: 'RANGE',
                 },
-              ]
-            : []),
-        ],
-        LocalSecondaryIndexes:
-          lsis.length === 0
-            ? undefined
-            : lsis.map(([name, { sortKey: sk }]) => ({
-                IndexName: name,
-                KeySchema: [
-                  {
-                    AttributeName: hashKey,
-                    KeyType: 'HASH',
-                  },
-                  {
-                    AttributeName: sk,
-                    KeyType: 'RANGE',
-                  },
-                ],
-                Projection: {
-                  ProjectionType: 'ALL',
+              ],
+              Projection: {
+                ProjectionType: 'ALL',
+              },
+            })),
+      GlobalSecondaryIndexes:
+        gsis.length === 0
+          ? undefined
+          : gsis.map(([name, { partitionKey: pk, sortKey: sk }]) => ({
+              IndexName: name,
+              ProvisionedThroughput: _props.indexDefinitions?.[name]
+                ?.provisionedThroughput && {
+                ReadCapacityUnits:
+                  _props.indexDefinitions?.[name]?.provisionedThroughput.read,
+                WriteCapacityUnits:
+                  _props.indexDefinitions?.[name]?.provisionedThroughput.write,
+              },
+              KeySchema: [
+                {
+                  AttributeName: pk,
+                  KeyType: 'HASH',
                 },
-              })),
-        GlobalSecondaryIndexes:
-          gsis.length === 0
-            ? undefined
-            : gsis.map(([name, { partitionKey: pk, sortKey: sk }]) => ({
-                IndexName: name,
-                ProvisionedThroughput: _props.indexDefinitions?.[name]
-                  ?.provisionedThroughput && {
-                  ReadCapacityUnits:
-                    _props.indexDefinitions?.[name]?.provisionedThroughput.read,
-                  WriteCapacityUnits:
-                    _props.indexDefinitions?.[name]?.provisionedThroughput
-                      .write,
+                {
+                  AttributeName: sk,
+                  KeyType: 'RANGE',
                 },
-                KeySchema: [
-                  {
-                    AttributeName: pk,
-                    KeyType: 'HASH',
-                  },
-                  {
-                    AttributeName: sk,
-                    KeyType: 'RANGE',
-                  },
-                ],
-                Projection: {
-                  ProjectionType: 'ALL',
-                },
-              })),
-      };
-      await dynamo.createTable(request).catch((e) => {
-        console.error(e);
+              ],
+              Projection: {
+                ProjectionType: 'ALL',
+              },
+            })),
+    };
+    await dynamo.createTable(request).catch((e) => {
+      console.error(e);
+      return Promise.reject(e);
+    });
+  };
+  const deleteTable: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['deleteTable'] = () =>
+    dynamo.deleteTable({ TableName: tableName }).then(() => void 0);
+  const get: TableFactoryResult<T, PartitionKey, SortKey, Ixs>['get'] = async (
+    hkv,
+    opts
+  ) => {
+    const keys = (opts?.keys || []) as readonly string[];
+    const keysSupplied = keys.length > 0;
+    const projectionExpressionAttributes = new ExpressionAttributes();
+    const projectionExpression = keys
+      .map((k) => {
+        const exp = projectionExpressionAttributes.addName(
+          new AttributePath(k)
+        );
+        return exp;
+      })
+      .join(', ');
+
+    const req = {
+      TableName: tableDefintion.name,
+      Key: marshaller.marshallItem(
+        extractKey(hkv, tableDefintion.partitionKey, sortKey)
+      ),
+      ConsistentRead: opts?.consistentRead,
+      ProjectionExpression: keysSupplied ? projectionExpression : undefined,
+      ExpressionAttributeNames: keysSupplied
+        ? projectionExpressionAttributes.names
+        : undefined,
+    };
+    return dynamo
+      .getItem(req)
+      .then((r) =>
+        r.Item
+          ? opts?.marshaller
+            ? (unmarshall(
+                (opts?.marshaller as unknown) as DynamoMarshallerFor<DynamoObject>,
+                r.Item
+              ) as any)
+            : (marshaller.unmarshallItem(r.Item) as any)
+          : null
+      )
+      .catch((e) => {
+        logger.error(e);
         return Promise.reject(e);
       });
-    },
-    deleteTable: () =>
-      dynamo.deleteTable({ TableName: tableName }).then(() => void 0),
-    get: (hkv, opts) => {
-      const keys = (opts?.keys || []) as readonly string[];
-      const keysSupplied = keys.length > 0;
-      const projectionExpressionAttributes = new ExpressionAttributes();
-      const projectionExpression = keys
-        .map((k) => {
-          const exp = projectionExpressionAttributes.addName(
-            new AttributePath(k)
-          );
-          return exp;
-        })
-        .join(', ');
-
-      const req = {
-        TableName: tableDefintion.name,
-        Key: marshaller.marshallItem(
-          extractKey(hkv, tableDefintion.partitionKey, sortKey)
-        ),
-        ConsistentRead: opts?.consistentRead,
-        ProjectionExpression: keysSupplied ? projectionExpression : undefined,
-        ExpressionAttributeNames: keysSupplied
-          ? projectionExpressionAttributes.names
-          : undefined,
-      };
-      return dynamo
-        .getItem(req)
-        .then((r) =>
-          r.Item
-            ? opts?.marshaller
-              ? unmarshall(
-                  (opts?.marshaller as unknown) as DynamoMarshallerFor<DynamoObject>,
-                  r.Item
-                )
-              : marshaller.unmarshallItem(r.Item)
-            : null
-        )
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    batchGet: (keys, opts) => {
-      const projKeys = (opts?.keys || []) as readonly string[];
-      const projKeysSupplied = projKeys.length > 0;
-      const projectionExpressionAttributes = new ExpressionAttributes();
-      const projectionExpression = projKeys
-        .map((k) => {
-          const exp = projectionExpressionAttributes.addName(
-            new AttributePath(k)
-          );
-          return exp;
-        })
-        .join(', ');
-      return dynamo
-        .batchGetItem({
-          RequestItems: {
-            [tableName]: {
-              Keys: keys.map((hkv) =>
-                marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
-              ),
-              ConsistentRead: opts?.consistentRead,
-              ProjectionExpression: projKeysSupplied
-                ? projectionExpression
-                : undefined,
-              ExpressionAttributeNames: projKeysSupplied
-                ? projectionExpressionAttributes.names
-                : undefined,
-            },
+  };
+  const batchGet: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['batchGet'] = (keys, opts) => {
+    const projKeys = (opts?.keys || []) as readonly string[];
+    const projKeysSupplied = projKeys.length > 0;
+    const projectionExpressionAttributes = new ExpressionAttributes();
+    const projectionExpression = projKeys
+      .map((k) => {
+        const exp = projectionExpressionAttributes.addName(
+          new AttributePath(k)
+        );
+        return exp;
+      })
+      .join(', ');
+    return dynamo
+      .batchGetItem({
+        RequestItems: {
+          [tableName]: {
+            Keys: keys.map((hkv) =>
+              marshaller.marshallItem(extractKey(hkv, hashKey, sortKey))
+            ),
+            ConsistentRead: opts?.consistentRead,
+            ProjectionExpression: projKeysSupplied
+              ? projectionExpression
+              : undefined,
+            ExpressionAttributeNames: projKeysSupplied
+              ? projectionExpressionAttributes.names
+              : undefined,
           },
-        })
-        .then((r) =>
-          Object.values(r.Responses)[0].map(
-            marshaller.unmarshallItem.bind(marshaller)
-          )
+        },
+      })
+      .then((r) =>
+        Object.values(r.Responses ?? {})[0].map<any>(
+          marshaller.unmarshallItem.bind(marshaller)
         )
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    transactGet: (keys) =>
-      dynamo
-        .transactGetItems({
-          TransactItems: keys.map((k) => ({
-            Get: {
-              Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
-              TableName: tableName,
+      )
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
+  const put: TableFactoryResult<T, PartitionKey, SortKey, Ixs>['put'] = (
+    a,
+    opts
+  ) => {
+    const attributes = new ExpressionAttributes();
+    const ce: any | undefined = opts?.conditionExpression;
+
+    const conditionExpression =
+      ce !== undefined
+        ? serializeConditionExpression(ce, attributes)
+        : undefined;
+    return dynamo
+      .putItem({
+        TableName: tableName,
+        Item: marshaller.marshallItem(a),
+        ExpressionAttributeNames:
+          Object.keys(attributes.names).length > 0
+            ? attributes.names
+            : undefined,
+        ExpressionAttributeValues:
+          Object.keys(attributes.values).length > 0
+            ? attributes.values
+            : undefined,
+        ConditionExpression: conditionExpression,
+      })
+      .then((i) =>
+        i.Attributes
+          ? (marshaller.unmarshallItem(i.Attributes) as any)
+          : undefined
+      )
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
+  const transactGet: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['transactGet'] = (keys) =>
+    dynamo
+      .transactGetItems({
+        TransactItems: keys.map((k) => ({
+          Get: {
+            Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
+            TableName: tableName,
+          },
+        })),
+      })
+      .then(
+        (r) =>
+          r.Responses?.map<any>((r) =>
+            r.Item ? marshaller.unmarshallItem(r.Item) : undefined
+          ).filter((i) => i != undefined) || []
+      )
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  const set: TableFactoryResult<T, PartitionKey, SortKey, Ixs>['set'] = (
+    k,
+    v,
+    opts
+  ) => {
+    const request = serializeSetAction(v as Record<string, DynamoPrimitive>);
+    const attributes = new ExpressionAttributes();
+    const expression = request.serialize(attributes);
+    const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey));
+    const conditionExpression = opts?.conditionExpression
+      ? serializeConditionExpression(
+          opts.conditionExpression as any,
+          attributes
+        )
+      : undefined;
+    return dynamo
+      .updateItem({
+        TableName: tableName,
+        Key: key,
+        UpdateExpression: expression,
+        ExpressionAttributeNames:
+          Object.keys(attributes.names).length > 0
+            ? attributes.names
+            : undefined,
+        ExpressionAttributeValues:
+          Object.keys(attributes.values).length > 0
+            ? attributes.values
+            : undefined,
+        ReturnValues: opts?.returnValue || 'ALL_NEW',
+        ConditionExpression: conditionExpression,
+      })
+      .then((i) =>
+        i.Attributes
+          ? (marshaller.unmarshallItem(i.Attributes) as any)
+          : undefined
+      )
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
+  const batchPut: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['batchPut'] = (a) =>
+    dynamo
+      .batchWriteItem({
+        RequestItems: {
+          [tableName]: a.map((item) => ({
+            PutRequest: {
+              Item: marshaller.marshallItem(item),
             },
           })),
-        })
-        .then((r) =>
-          r.Responses.map((r) =>
-            r.Item ? marshaller.unmarshallItem(r.Item) : undefined
-          ).filter((i) => i != undefined)
-        )
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        }),
-    query: query(dynamo, logger, tableName, hashKey, sortKey, marshaller),
-    scan: scan(dynamo, logger, tableName, hashKey, sortKey, marshaller),
-    put: (a, opts) => {
+        },
+      })
+      .then(() => void 0)
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  const batchDelete: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['batchDelete'] = (a) =>
+    dynamo
+      .batchWriteItem({
+        RequestItems: {
+          [tableName]: a.map((item) => ({
+            DeleteRequest: {
+              Key: marshaller.marshallItem(extractKey(item, hashKey, sortKey)),
+            },
+          })),
+        },
+      })
+      .then(() => void 0)
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  const transactWrite: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['transactWrite'] = (args) => {
+    const deletes = (args.deletes || []).map((item) => {
       const attributes = new ExpressionAttributes();
-
+      const ce: any = item.conditionExpression;
       const conditionExpression =
-        opts?.conditionExpression !== undefined
-          ? serializeConditionExpression(opts.conditionExpression, attributes)
+        ce !== undefined
+          ? serializeConditionExpression(ce, attributes)
           : undefined;
-      return dynamo
-        .putItem({
+      return {
+        Delete: {
           TableName: tableName,
-          Item: marshaller.marshallItem(a),
+          Key: marshaller.marshallItem(extractKey(item.item, hashKey, sortKey)),
+          ConditionExpression: conditionExpression,
           ExpressionAttributeNames:
             Object.keys(attributes.names).length > 0
               ? attributes.names
@@ -676,27 +828,44 @@ export const Table = <
             Object.keys(attributes.values).length > 0
               ? attributes.values
               : undefined,
+        },
+      };
+    });
+    const puts = (args.puts || []).map((item) => {
+      const attributes = new ExpressionAttributes();
+      const ce: any = item.conditionExpression;
+      const conditionExpression =
+        ce !== undefined
+          ? serializeConditionExpression(ce, attributes)
+          : undefined;
+      return {
+        Put: {
+          TableName: tableName,
+          Item: marshaller.marshallItem(item.item),
           ConditionExpression: conditionExpression,
-        })
-        .then((i) =>
-          i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
-        )
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    set: (k, v, opts) => {
-      const request = serializeSetAction(v as Record<string, DynamoPrimitive>);
+          ExpressionAttributeNames:
+            Object.keys(attributes.names).length > 0
+              ? attributes.names
+              : undefined,
+          ExpressionAttributeValues:
+            Object.keys(attributes.values).length > 0
+              ? attributes.values
+              : undefined,
+        },
+      };
+    });
+    const updates = (args.updates || []).map((u) => {
+      const request = serializeSetAction(u.updates);
       const attributes = new ExpressionAttributes();
       const expression = request.serialize(attributes);
-      const key = marshaller.marshallItem(extractKey(k, hashKey, sortKey));
-      const conditionExpression = opts?.conditionExpression
-        ? serializeConditionExpression(opts.conditionExpression, attributes)
-        : undefined;
-      return dynamo
-        .updateItem({
-          TableName: tableName,
+      const key = marshaller.marshallItem(extractKey(u.key, hashKey, sortKey));
+      const ce: any = u.conditionExpression;
+      const conditionExpression =
+        ce !== undefined
+          ? serializeConditionExpression(ce, attributes)
+          : undefined;
+      return {
+        Update: {
           Key: key,
           UpdateExpression: expression,
           ExpressionAttributeNames:
@@ -707,195 +876,123 @@ export const Table = <
             Object.keys(attributes.values).length > 0
               ? attributes.values
               : undefined,
-          ReturnValues: opts?.returnValue || 'ALL_NEW',
           ConditionExpression: conditionExpression,
-        })
-        .then((i) =>
-          i.Attributes ? marshaller.unmarshallItem(i.Attributes) : undefined
-        )
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    batchPut: (a) =>
-      dynamo
-        .batchWriteItem({
-          RequestItems: {
-            [tableName]: a.map((item) => ({
-              PutRequest: {
-                Item: marshaller.marshallItem(item),
-              },
-            })),
-          },
-        })
-        .then(() => ({}))
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        }),
-    batchDelete: (a) =>
-      dynamo
-        .batchWriteItem({
-          RequestItems: {
-            [tableName]: a.map((item) => ({
-              DeleteRequest: {
-                Key: marshaller.marshallItem(
-                  extractKey(item, hashKey, sortKey)
-                ),
-              },
-            })),
-          },
-        })
-        .then(() => ({}))
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        }),
-    transactPut: (a) =>
-      Table(tableDefintion, config).transactWrite({ puts: a }),
-    transactDelete: (a) =>
-      Table(tableDefintion, config).transactWrite({ deletes: a }),
-    transactWrite: (args) => {
-      const deletes = (args.deletes || []).map((item) => {
-        const attributes = new ExpressionAttributes();
-        const conditionExpression =
-          item.conditionExpression !== undefined
-            ? serializeConditionExpression(item.conditionExpression, attributes)
-            : undefined;
-        return {
-          Delete: {
-            TableName: tableName,
-            Key: marshaller.marshallItem(
-              extractKey(item.item, hashKey, sortKey)
-            ),
-            ConditionExpression: conditionExpression,
-            ExpressionAttributeNames:
-              Object.keys(attributes.names).length > 0
-                ? attributes.names
-                : undefined,
-            ExpressionAttributeValues:
-              Object.keys(attributes.values).length > 0
-                ? attributes.values
-                : undefined,
-          },
-        };
-      });
-      const puts = (args.puts || []).map((item) => {
-        const attributes = new ExpressionAttributes();
-        const conditionExpression =
-          item.conditionExpression !== undefined
-            ? serializeConditionExpression(item.conditionExpression, attributes)
-            : undefined;
-        return {
-          Put: {
-            TableName: tableName,
-            Item: marshaller.marshallItem(item.item),
-            ConditionExpression: conditionExpression,
-            ExpressionAttributeNames:
-              Object.keys(attributes.names).length > 0
-                ? attributes.names
-                : undefined,
-            ExpressionAttributeValues:
-              Object.keys(attributes.values).length > 0
-                ? attributes.values
-                : undefined,
-          },
-        };
-      });
-      const updates = (args.updates || []).map((u) => {
-        const request = serializeSetAction(u.updates);
-        const attributes = new ExpressionAttributes();
-        const expression = request.serialize(attributes);
-        const key = marshaller.marshallItem(
-          extractKey(u.key, hashKey, sortKey)
-        );
-        const conditionExpression =
-          u.conditionExpression !== undefined
-            ? serializeConditionExpression(u.conditionExpression, attributes)
-            : undefined;
-        return {
-          Update: {
-            Key: key,
-            UpdateExpression: expression,
-            ExpressionAttributeNames:
-              Object.keys(attributes.names).length > 0
-                ? attributes.names
-                : undefined,
-            ExpressionAttributeValues:
-              Object.keys(attributes.values).length > 0
-                ? attributes.values
-                : undefined,
-            ConditionExpression: conditionExpression,
-            TableName: tableName,
-          },
-        };
-      });
-      const TransactItems = [...deletes, ...puts, ...updates];
-      return dynamo
-        .transactWriteItems({
-          TransactItems,
-        })
-        .then(() => ({}))
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    delete: (k, opts) => {
-      const attributes = new ExpressionAttributes();
-      const conditionExpression =
-        opts?.conditionExpression !== undefined
-          ? serializeConditionExpression(opts.conditionExpression, attributes)
-          : undefined;
-      return dynamo
-        .deleteItem({
           TableName: tableName,
-          Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
-          ConditionExpression: conditionExpression,
-          ExpressionAttributeNames:
-            Object.keys(attributes.names).length > 0
-              ? attributes.names
-              : undefined,
-          ExpressionAttributeValues:
-            Object.keys(attributes.values).length > 0
-              ? attributes.values
-              : undefined,
-        })
-        .then(() => ({}))
-        .catch((e) => {
-          logger.error(e);
-          return Promise.reject(e);
-        });
-    },
-    indexes: Object.keys(indexes).reduce(
-      (p, k) => ({
-        ...p,
-        ...{
-          [k]: {
-            query: query(
-              dynamo,
-              logger,
-              tableName,
-              indexes[k].partitionKey,
-              indexes[k].sortKey,
-              marshaller,
-              indexes[k].name
-            ),
-            scan: scan(
-              dynamo,
-              logger,
-              tableName,
-              indexes[k].partitionKey,
-              indexes[k].sortKey,
-              marshaller,
-              indexes[k].name
-            ),
-          },
         },
-      }),
-      {}
-    ),
+      };
+    });
+    const TransactItems = [...deletes, ...puts, ...updates];
+    return dynamo
+      .transactWriteItems({
+        TransactItems,
+      })
+      .then(() => void 0)
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
+  const _delete: TableFactoryResult<T, PartitionKey, SortKey, Ixs>['delete'] = (
+    k,
+    opts
+  ) => {
+    const attributes = new ExpressionAttributes();
+    const ce: any = opts?.conditionExpression;
+    const conditionExpression =
+      ce !== undefined
+        ? serializeConditionExpression(ce, attributes)
+        : undefined;
+    return dynamo
+      .deleteItem({
+        TableName: tableName,
+        Key: marshaller.marshallItem(extractKey(k, hashKey, sortKey)),
+        ConditionExpression: conditionExpression,
+        ExpressionAttributeNames:
+          Object.keys(attributes.names).length > 0
+            ? attributes.names
+            : undefined,
+        ExpressionAttributeValues:
+          Object.keys(attributes.values).length > 0
+            ? attributes.values
+            : undefined,
+      })
+      .then(() => void 0)
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
+  const _indexes: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['indexes'] = Object.keys(indexes).reduce(
+    (p, k) => ({
+      ...p,
+      ...{
+        [k]: {
+          query: query(
+            dynamo,
+            logger,
+            tableName,
+            indexes[k].partitionKey,
+            indexes[k].sortKey,
+            marshaller,
+            indexes[k].name
+          ),
+          scan: scan(
+            dynamo,
+            logger,
+            tableName,
+            indexes[k].partitionKey,
+            indexes[k].sortKey,
+            marshaller,
+            indexes[k].name
+          ),
+        },
+      },
+    }),
+    {} as Indexes<Ixs>
+  );
+  const _query: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  >['query'] = query(dynamo, logger, tableName, hashKey, sortKey!, marshaller);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const _scan = scan(dynamo, logger, tableName, hashKey, sortKey!, marshaller);
+  const transactPut: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['transactPut'] = (a) => transactWrite({ puts: a });
+  const transactDelete: TableFactoryResult<
+    T,
+    PartitionKey,
+    SortKey,
+    Ixs
+  >['transactDelete'] = (a) => transactWrite({ deletes: a });
+  const retval = {
+    createTable,
+    deleteTable,
+    get,
+    batchGet,
+    transactGet,
+    query: _query,
+    scan: _scan,
+    put,
+    set,
+    batchPut,
+    batchDelete,
+    transactPut,
+    transactDelete,
+    transactWrite,
+    delete: _delete,
+    indexes: _indexes,
   } as TableFactoryResult<T, PartitionKey, SortKey, Ixs>;
   return retval;
 };
