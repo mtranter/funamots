@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable functional/prefer-readonly-type */
 
 type ValueOf<T> = T[keyof T];
@@ -58,18 +57,18 @@ export type NestedKeyOf<T, D extends number = 7> = [D] extends [never]
       | { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
   : '';
 
-export type UnionToIntersection<U> = (
+export type UnionToIntersection<U, Default = never> = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   U extends any
     ? // eslint-disable-next-line functional/no-return-void
       (k: U) => void
-    : never
+    : Default
 ) extends (
   k: infer I
   // eslint-disable-next-line functional/no-return-void
 ) => void
   ? I
-  : never;
+  : Default;
 
 type Join<K, P> = K extends string | number
   ? P extends string | number

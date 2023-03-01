@@ -24,7 +24,7 @@ const comparatorOperators: DyanmoCompareOperator[] = [
   '<>',
 ];
 
-const isComparator = <V>(a: unknown): a is Comparator<V> => {
+const isComparator = <V>(a: {}): a is Comparator<V> => {
   const keys = Object.keys(a);
   return (
     keys.length === 1 &&
@@ -205,8 +205,9 @@ const serializeComparator = (
   attributes: ExpressionAttributes
 ) => `${Object.keys(c)[0]} ${attributes.addValue(Object.values(c)[0])}`;
 
-const _serializeConditionExpression = <A>(
-  expression: ConditionExpression<A>,
+const _serializeConditionExpression = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  expression: ConditionExpression<any>,
   attributes: ExpressionAttributes,
   path: AttributePath,
   combinator = 'AND'
@@ -245,8 +246,9 @@ const _serializeConditionExpression = <A>(
         ...path.elements,
         { type: 'AttributeName' as const, name: key },
       ]);
-      const queryObject = expression as ConditionObject<A>;
-      const operator = queryObject[key as keyof A];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const queryObject = expression as ConditionObject<any>;
+      const operator = queryObject[key];
       if (isBetweenFunction(operator)) {
         return `${attributes.addName(
           attributePath
@@ -259,7 +261,7 @@ const _serializeConditionExpression = <A>(
         )} in (${operator.values
           .map((a) => attributes.addValue(a))
           .join(', ')})`;
-      } else if (isComparator(operator)) {
+      } else if (!!operator && isComparator(operator)) {
         return `${attributes.addName(attributePath)} ${serializeComparator(
           operator,
           attributes
@@ -291,9 +293,10 @@ const _serializeConditionExpression = <A>(
   }
 };
 
-export const serializeConditionExpression = <A>(
-  expression: ConditionExpression<A>,
+export const serializeConditionExpression = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  expression: ConditionExpression<any>,
   attributes: ExpressionAttributes
-) =>
+): string | undefined =>
   expression &&
   _serializeConditionExpression(expression, attributes, new AttributePath([]));

@@ -15,7 +15,7 @@ const marshaller = new Marshaller({
 });
 
 export type DynamoMarshallerFor<T extends DynamoObject> = {
-  readonly [k in keyof T]: DynamoMarshaller<T[k]>;
+  readonly [k in keyof T]-?: DynamoMarshaller<T[k]>;
 };
 
 const buildMarshaller: <T extends DynamoPrimitive>(
@@ -56,8 +56,7 @@ export const Marshallers = {
   arrayBufferView: buildMarshaller<ArrayBufferView>(),
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const marshall = <TT, _T extends DynamoObject & TT>(t: TT) =>
+export const marshall = <TT, _T extends DynamoObject & TT>(t: _T) =>
   marshaller.marshallItem(t);
 export const unmarshall = <T extends DynamoObject>(
   schema: DynamoMarshallerFor<T>,
