@@ -82,8 +82,8 @@ type _NestedPick<
   Agg = {}
 > = K extends `${infer Key}.${infer Rest}`
   ? Key extends keyof A
-    ? A[Key] extends object
-      ? { [s in Key]: _NestedPick<A[Key], Rest, Agg> }
+    ? NonNullable<A[Key]> extends Record<string, unknown>
+      ? { [s in Key]: _NestedPick<NonNullable<A[Key]>, Rest, Agg> }
       : never
     : never
   : K extends keyof A & string
