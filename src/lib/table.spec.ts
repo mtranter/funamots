@@ -433,7 +433,7 @@ describe('Table', () => {
         });
       };
       it('Should get selected keys', async () => {
-        const result: any = await setup();
+        const result = await setup();
         expect(result?.gsihash).toEqual(key.gsihash);
         expect(result?.sort).toEqual(key.sort);
         expect(result?.complexSubDoc.subSubDoc.id).toEqual('123');
