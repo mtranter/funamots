@@ -52,10 +52,14 @@ type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 export type NestedKeyOf<T, D extends number = 7> = [D] extends [never]
   ? never
   : T extends object
-  ?
-      | (keyof T & string)
-      | { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
+  ? { [K in keyof T]-?: Join<K, NestedKeyOf<T[K], Prev[D]>> }[keyof T]
   : '';
+
+type Join<K, P> = K extends string
+  ? P extends string
+    ? `${K}${'' extends P ? '' : '.'}${P}`
+    : never
+  : never;
 
 export type UnionToIntersection<U, Default = never> = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,12 +73,6 @@ export type UnionToIntersection<U, Default = never> = (
 ) => void
   ? I
   : Default;
-
-type Join<K, P> = K extends string | number
-  ? P extends string | number
-    ? `${K}${'' extends P ? '' : '.'}${P}`
-    : never
-  : never;
 
 type _NestedPick<
   A,

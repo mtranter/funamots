@@ -346,6 +346,8 @@ describe('Table', () => {
           readonly id: string;
           readonly name: string;
         };
+        // eslint-disable-next-line functional/prefer-readonly-type
+        readonly someArray?: string[];
       };
     };
 
@@ -413,12 +415,18 @@ describe('Table', () => {
             id: '123',
             name: 'fred',
           },
+          someArray: ['Fred'],
         },
       };
       const setup = async () => {
         await compoundTable.put(key);
         return compoundTable.get(key, {
-          keys: ['gsihash', 'sort', 'complexSubDoc.subSubDoc.id'],
+          keys: [
+            'gsihash',
+            'sort',
+            'complexSubDoc.subSubDoc.id',
+            'complexSubDoc.someArray',
+          ],
         });
       };
       it('Should get selected keys', async () => {
@@ -426,6 +434,7 @@ describe('Table', () => {
         expect(result?.gsihash).toEqual(key.gsihash);
         expect(result?.sort).toEqual(key.sort);
         expect(result?.complexSubDoc.subSubDoc.id).toEqual('123');
+        expect(result?.complexSubDoc.someArray).toEqual(['Fred']);
         expect((result?.complexSubDoc.subSubDoc as any).name).toBeUndefined();
         expect((result?.complexSubDoc as any).id).toBeUndefined();
       });
