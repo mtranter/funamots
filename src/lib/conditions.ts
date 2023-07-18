@@ -32,6 +32,10 @@ const isComparator = <V>(a: {}): a is Comparator<V> => {
   );
 };
 
+/**
+ * @example { id: { '=': '123' } }
+ * @example { id: { '=': '123' }, name: { '<>': 'foo' } }
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ConditionObject<A> = A extends Record<string, any>
   ? {
@@ -41,6 +45,12 @@ export type ConditionObject<A> = A extends Record<string, any>
         | ConditionExpression<A[k]>;
     }
   : never;
+
+/**
+ * @example { id: { '=': '123' } }
+ * @example { id: { '=': '123' }, name: { '<>': 'foo' } }
+ * @example OR({ id: { '=': '123' } }, { name: attributeNotExists() })
+ */
 export type ConditionExpression<A> =
   | BooleanCombinatorExpression<A>
   | ConditionObject<A>

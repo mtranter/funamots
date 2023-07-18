@@ -20,6 +20,10 @@ const client = new DynamoDB({
   endpoint: 'http://localhost:8000',
   tls: false,
   region: 'local-env',
+  credentials: {
+    accessKeyId: 'foo',
+    secretAccessKey: 'bar',
+  },
 });
 
 const randomAlphaNumeric = (length: number) =>

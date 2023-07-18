@@ -28,6 +28,11 @@ export type ScanResult<A, H, K> = {
   readonly nextStartKey?: DynamoObject;
 };
 
+/**
+ * @example { sortKey: { '<': 'foo' } }
+ * @example { sortKey: { '>=': 'foo' } }
+ * @example { sortKey: beginsWith('fo') }
+ */
 export type SortKeyCompare<RKV> =
   | Exclude<Comparator<RKV>, { readonly '<>': RKV }>
   | Extract<
@@ -41,6 +46,7 @@ export type QueryOpts<
   RK extends string
 > = {
   readonly pageSize?: number;
+
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
   /**
    * @deprecated Use `startKey` instead
@@ -79,10 +85,15 @@ export type Queryable<
   HK extends string,
   RK extends string
 > = {
+  /**
+   * @example query({ hashKey: 'foo' })
+   * @example query({ hashKey: 'foo', sortKey: { '>=': 'bar' } }, { pageSize: 10, descending: true })
+   */
   readonly query: <AA extends A = A>(
     hk: NonNullable<A[HK]>,
     opts?: QueryOpts<AA, HK, RK>
   ) => Promise<QueryResult<AA, A[RK]>>;
+
   readonly scan: (
     opts?: ScanOpts<A, HK, RK>
   ) => Promise<ScanResult<A, A[HK], A[RK]>>;

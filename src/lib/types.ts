@@ -49,6 +49,20 @@ export type RecursivePartial<T> = {
 };
 
 type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+/**
+ * Get all possible nested keys of an object
+ * @example
+ * type Foo = {
+ *  a: {
+ *   b: {
+ *   c: string;
+ *  };
+ * };
+ * d: number;
+ * };
+ * type Keys = NestedKeyOf<Foo>;
+ * // type Keys = "a" | "a.b" | "a.b.c" | "d"
+ */
 export type NestedKeyOf<T, D extends number = 7> = [D] extends [never]
   ? never
   : T extends object
@@ -92,6 +106,20 @@ export type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
 
+/**
+ * Get all possible nested keys of an object
+ * @example
+ * type Foo = {
+ *   a: {
+ *     b: {
+ *       c: string;
+ *     };
+ *   };
+ *   d: number;
+ * };
+ * type Keys = NestedPick<Foo, "a.b">;
+ * // type Keys = { a: { b: { c: string; }; }; }
+ */
 export type NestedPick<A, K extends string> = Prettify<
   UnionToIntersection<_NestedPick<A, K>>
 >;
