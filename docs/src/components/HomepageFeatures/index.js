@@ -8,31 +8,35 @@ const FeatureList = [
     Svg: require('@site/static/img/easy.svg').default,
     description: (
       <>
-        Designed with Developer Experience at front of mind. All fancy type shenanigans are hidden away, allowing you to focus on app logic.
+        Designed with Developer Experience at front of mind. All fancy type
+        shenanigans are hidden away, allowing you to focus on app logic.
       </>
     ),
   },
   {
-    title: 'Composable',
+    title: 'Typesafe',
     Svg: require('@site/static/img/composable.svg').default,
     description: (
       <>
-        Composable middleware framework lets you know exactly what is happening at each step of the request lifecycle.
+        Know about breaking the DynamoDB rules at compile time. Plus
+        intellisense!
       </>
     ),
   },
   {
-    title: 'Pluggable Backends',
-    Svg: require('@site/static/img/plug.svg').default,
+    title: 'Minimal',
+    Svg: require('@site/static/img/mini-alt-svgrepo-com.svg').default,
     description: (
       <>
-        Works with any backend, including but not limited to: Express, AWS HTTP API, AWS REST API. Completely extensible to work with any backend.
+        So much more terse than the raw DynamoDB SDK. No more
+        <code>ExpressionAttributeValues</code> or
+        <code>ExpressionAttributeNames</code>!
       </>
     ),
   },
 ];
 
-function Feature({Svg, title, description}) {
+function Feature({ Svg, title, description }) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
