@@ -192,4 +192,4 @@ or
 
 ### Develop
 
-`yarn test` uses jest-dynamodb to run a local dynamodb instance.
+`pnpm test` uses jest-dynamodb to run a local dynamodb instance.
