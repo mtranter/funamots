@@ -4,7 +4,7 @@ import {
   ConditionExpression,
 } from './conditions';
 import { DynamoMarshallerFor } from './marshalling';
-import { DynamoObject } from './types';
+import { DynamoObject, Prettify } from './types';
 
 export type QueryResult<A, K> = {
   readonly records: readonly A[];
@@ -44,7 +44,7 @@ export type QueryOpts<
   A extends DynamoObject,
   HK extends string,
   RK extends string
-> = {
+> = Prettify<{
   readonly pageSize?: number;
 
   readonly sortKeyExpression?: SortKeyCompare<A[RK]>;
@@ -57,7 +57,7 @@ export type QueryOpts<
   readonly descending?: boolean;
   readonly consistentRead?: boolean;
   readonly filterExpression?: ConditionExpression<Omit<A, HK | RK>>;
-};
+}>;
 
 export type ScanOpts<
   A extends DynamoObject,

@@ -558,7 +558,7 @@ describe('Table', () => {
       expect(result2.records).toEqual(testObjects.slice(10));
     });
 
-    it('Should put and query with sort key expression', async () => {
+    it('Should put and query with ft key expression', async () => {
       const testObjects = Array.from(Array(20).keys()).map((i) => ({
         hash: '1',
         sort: i,
