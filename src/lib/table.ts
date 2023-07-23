@@ -1,6 +1,7 @@
 import { DynamoDB as DynamoDb } from '@aws-sdk/client-dynamodb';
 import {
   AttributePath,
+  MathematicalExpression as DynamoMathematicalExpression,
   ExpressionAttributes,
   FunctionExpression,
   PathElement,
@@ -33,8 +34,8 @@ import {
   DynamoValueKeys,
   NestedKeyOf,
   NestedPick,
+  NestedTargetIs,
   Prettify,
-  RecursivePartial,
   RequireAtLeastOne,
   UnionToIntersection,
 } from './types';
@@ -47,14 +48,61 @@ type UpdateReturnValue =
   | 'UPDATED_NEW';
 
 const IfNotExistsKey = Symbol('IF_NOT_EXISTS');
-type IfNotExists<O> = {
-  readonly ifNotExists: O;
+type IfNotExists<K extends string, V> = {
+  readonly path: K;
+  readonly value: V;
   readonly [IfNotExistsKey]: true;
 };
+const isIfNotExists = <A, K extends string, V>(
+  o: A | IfNotExists<K, V>
+): o is IfNotExists<K, V> =>
+  o && (o as IfNotExists<K, V>)[IfNotExistsKey] === true;
 
-export const ifNotExists = <O>(o: O): IfNotExists<O> => ({
-  ifNotExists: o,
+export const ifNotExists = <K extends string, V>(
+  path: K,
+  value: V
+): IfNotExists<K, V> => ({
+  path,
+  value,
   [IfNotExistsKey]: true,
+});
+
+const MathematicalExpressionKey = Symbol('MATHEMATICS_EXPRESSIONS');
+type MathematicalExpression<A> = {
+  readonly lhs:
+    | NestedTargetIs<A, number | undefined>
+    | IfNotExists<NestedTargetIs<A, number | undefined>, number>;
+  readonly operation: '+' | '-';
+  readonly rhs: number | string;
+  readonly [MathematicalExpressionKey]: true;
+};
+
+const isMathematicalExpression = <A>(
+  o: A | MathematicalExpression<A>
+): o is MathematicalExpression<A> =>
+  o && (o as MathematicalExpression<A>)[MathematicalExpressionKey] === true;
+
+export const plus = <A>(
+  lhs:
+    | NestedTargetIs<A, number | undefined>
+    | IfNotExists<NestedTargetIs<A, number | undefined>, number>,
+  n: number | NestedTargetIs<A, number>
+): MathematicalExpression<A> => ({
+  lhs: lhs,
+  operation: '+',
+  rhs: n,
+  [MathematicalExpressionKey]: true,
+});
+export const minus = <A>(
+  lhs:
+    | NestedTargetIs<A, number | undefined>
+    | IfNotExists<NestedTargetIs<A, number | undefined>, number>,
+  n: number | NestedTargetIs<A, number>
+): MathematicalExpression<A> => ({
+  lhs: lhs,
+  operation: '-',
+  rhs: n,
+  [MathematicalExpressionKey]: true,
 });
 
 type SetOpts<A extends DynamoObject, RV extends UpdateReturnValue> = {
@@ -87,12 +135,14 @@ type TransactWriteItem<I, CE> = {
   readonly conditionExpression?: ConditionExpression<CE>;
 };
 
-type SetTarget<T, N extends boolean = false> =
-  | T
-  | (N extends false ? never : IfNotExists<T>)
-  | {
-      readonly [K in keyof T]: SetTarget<T[K], true>;
-    };
+type SetTarget<T, Original = T> = T extends DynamoObject
+  ? {
+      readonly [K in keyof T]?: SetTarget<T[K], Original>;
+    }
+  :
+      | T
+      | IfNotExists<NestedKeyOf<Original, 5>, T>
+      | MathematicalExpression<Original>;
 
 type AttributeDynamoTypeMap<S extends DynamoKeyTypes> = S extends string
   ? 'S'
@@ -195,7 +245,7 @@ export type Table<
   readonly put: <AA extends A>(a: AA, opts?: PutOpts<A>) => Promise<void>;
   readonly set: <RV extends UpdateReturnValue = 'NONE'>(
     key: Prettify<Pick<A, HK | RK>>,
-    updates: RecursivePartial<SetTarget<Omit<A, HK | RK>>>,
+    updates: SetTarget<Omit<A, HK | RK>>,
     opts?: SetOpts<Omit<A, HK | RK>, RV>
   ) => Promise<SetResponse<A, RV>>;
   readonly batchPut: (a: ReadonlyArray<A>) => Promise<void>;
@@ -214,7 +264,7 @@ export type Table<
       readonly deletes: ReadonlyArray<TransactWriteItem<Pick<A, HK | RK>, A>>;
       readonly updates: ReadonlyArray<{
         readonly key: Pick<A, HK | RK>;
-        readonly updates: RecursivePartial<SetTarget<Omit<A, HK | RK>>>;
+        readonly updates: SetTarget<Omit<A, HK | RK>>;
         readonly conditionExpression?: ConditionExpression<A>;
       }>;
     }>
@@ -259,15 +309,40 @@ const serializeSetAction = <A>(
   Object.keys(r as {}).reduce((p, n) => {
     const toSet = (r as Record<string, unknown>)[n] as
       | DynamoObject
-      | { readonly ifNotExists: DynamoObject };
-    if (toSet?.ifNotExists) {
+      | IfNotExists<string, unknown>;
+    if (isIfNotExists(toSet)) {
       const attPath = new AttributePath([
         ...path,
         { type: 'AttributeName', name: n } as const,
       ]);
       p.set(
         attPath,
-        new FunctionExpression('if_not_exists', attPath, toSet.ifNotExists)
+        new FunctionExpression(
+          'if_not_exists',
+          new AttributePath(toSet.path),
+          toSet.value
+        )
+      );
+    } else if (isMathematicalExpression(toSet)) {
+      const attPath = new AttributePath([
+        ...path,
+        { type: 'AttributeName', name: n } as const,
+      ]);
+      p.set(
+        attPath,
+        new DynamoMathematicalExpression(
+          isIfNotExists(toSet.lhs)
+            ? new FunctionExpression(
+                'if_not_exists',
+                new AttributePath(toSet.lhs.path),
+                toSet.lhs.value
+              )
+            : new AttributePath(toSet.lhs),
+          toSet.operation,
+          typeof toSet.rhs === 'string'
+            ? new AttributePath(toSet.rhs)
+            : toSet.rhs
+        )
       );
     } else if (!Array.isArray(toSet) && typeof toSet === 'object') {
       serializeSetAction(
@@ -297,130 +372,136 @@ const serializeSetAction = <A>(
   }, ue);
 
 /* eslint-disable  @typescript-eslint/no-explicit-any */
-const query = (
-  dynamo: DynamoDb,
-  logger: Logger,
-  table: string,
-  hk: string,
-  rk: string,
-  marshaller: Marshaller,
-  indexName?: string
-) => (
-  hkv: DynamoPrimitive,
-  opts?: QueryOpts<any, any, any>
-): Promise<QueryResult<any, any>> => {
-  const attributes = new ExpressionAttributes();
-  const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(
-    hkv
-  )}${
-    opts?.sortKeyExpression
-      ? ` and ${serializeConditionExpression(
-          {
-            [rk]: opts.sortKeyExpression,
-          } as ConditionObject<any>,
-          attributes
-        )}`
-      : ''
-  }`;
-  const lastKey =
-    opts?.startKey ??
-    (opts?.fromSortKey &&
-      rk &&
-      Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey }));
+const query =
+  (
+    dynamo: DynamoDb,
+    logger: Logger,
+    table: string,
+    hk: string,
+    rk: string,
+    marshaller: Marshaller,
+    indexName?: string
+  ) =>
+  (
+    hkv: DynamoPrimitive,
+    opts?: QueryOpts<any, any, any>
+  ): Promise<QueryResult<any, any>> => {
+    const attributes = new ExpressionAttributes();
+    const keyExpression = `${attributes.addName(hk)} = ${attributes.addValue(
+      hkv
+    )}${
+      opts?.sortKeyExpression
+        ? ` and ${serializeConditionExpression(
+            {
+              [rk]: opts.sortKeyExpression,
+            } as ConditionObject<any>,
+            attributes
+          )}`
+        : ''
+    }`;
+    const lastKey =
+      opts?.startKey ??
+      (opts?.fromSortKey &&
+        rk &&
+        Object.assign({}, { [hk]: hkv }, { [rk]: opts.fromSortKey }));
 
-  const filterExpression = opts?.filterExpression
-    ? serializeConditionExpression(opts.filterExpression, attributes)
-    : undefined;
-  return dynamo
-    .query({
-      TableName: table,
-      Limit: opts?.pageSize,
-      IndexName: indexName,
-      KeyConditionExpression: keyExpression,
-      ExpressionAttributeNames: attributes.names,
-      ExpressionAttributeValues: attributes.values,
-      ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
-      ScanIndexForward: !(opts && opts.descending),
-      FilterExpression: filterExpression,
-    })
-    .then((r) => {
-      const nextStartKey =
-        !!r.LastEvaluatedKey && !!rk
-          ? marshaller.unmarshallItem(r.LastEvaluatedKey)
-          : undefined;
-      return {
-        records: r.Items
-          ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
-          : [],
-        lastSortKey: nextStartKey?.[rk],
-        nextStartKey,
-      };
-    })
-    .catch((e) => {
-      logger.error(e);
-      return Promise.reject(e);
-    });
-};
+    const filterExpression = opts?.filterExpression
+      ? serializeConditionExpression(opts.filterExpression, attributes)
+      : undefined;
+    return dynamo
+      .query({
+        TableName: table,
+        Limit: opts?.pageSize,
+        IndexName: indexName,
+        KeyConditionExpression: keyExpression,
+        ExpressionAttributeNames: attributes.names,
+        ExpressionAttributeValues: attributes.values,
+        ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+        ScanIndexForward: !(opts && opts.descending),
+        FilterExpression: filterExpression,
+      })
+      .then((r) => {
+        const nextStartKey =
+          !!r.LastEvaluatedKey && !!rk
+            ? marshaller.unmarshallItem(r.LastEvaluatedKey)
+            : undefined;
+        return {
+          records: r.Items
+            ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
+            : [],
+          lastSortKey: nextStartKey?.[rk],
+          nextStartKey,
+        };
+      })
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
 
-const scan = (
-  dynamo: DynamoDb,
-  logger: Logger,
-  table: string,
-  hk: string,
-  rk: string,
-  marshaller: Marshaller,
-  indexName?: string
-) => (opts?: ScanOpts<any, any, any>): Promise<QueryResult<any, any>> => {
-  const attributes = new ExpressionAttributes();
+const scan =
+  (
+    dynamo: DynamoDb,
+    logger: Logger,
+    table: string,
+    hk: string,
+    rk: string,
+    marshaller: Marshaller,
+    indexName?: string
+  ) =>
+  (opts?: ScanOpts<any, any, any>): Promise<QueryResult<any, any>> => {
+    const attributes = new ExpressionAttributes();
 
-  const lastKey =
-    opts?.startKey ??
-    (opts?.fromSortKey &&
-      rk &&
-      Object.assign(
-        {},
-        { [hk]: opts.fromHashKey },
-        { [rk]: opts.fromSortKey }
-      ));
+    const lastKey =
+      opts?.startKey ??
+      (opts?.fromSortKey &&
+        rk &&
+        Object.assign(
+          {},
+          { [hk]: opts.fromHashKey },
+          { [rk]: opts.fromSortKey }
+        ));
 
-  const filterExpression = opts?.filterExpression
-    ? serializeConditionExpression(opts.filterExpression, attributes)
-    : undefined;
-  return dynamo
-    .scan({
-      TableName: table,
-      Limit: opts?.pageSize,
-      IndexName: indexName,
-      ExpressionAttributeNames:
-        Object.keys(attributes.names).length > 0 ? attributes.names : undefined,
-      ExpressionAttributeValues:
-        Object.keys(attributes.values).length > 0
-          ? attributes.values
-          : undefined,
-      ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
-      FilterExpression: filterExpression,
-    })
-    .then((r) => {
-      const nextStartKey =
-        !!r.LastEvaluatedKey && !!rk
-          ? marshaller.unmarshallItem(r.LastEvaluatedKey)
-          : undefined;
-      return {
-        records: r.Items
-          ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
-          : [],
-        lastHashKey:
-          r.LastEvaluatedKey &&
-          marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
-        lastSortKey: nextStartKey?.[rk],
-        nextStartKey,
-      };
-    })
-    .catch((e) => {
-      logger.error(e);
-      return Promise.reject(e);
-    });
-};
+    const filterExpression = opts?.filterExpression
+      ? serializeConditionExpression(opts.filterExpression, attributes)
+      : undefined;
+    return dynamo
+      .scan({
+        TableName: table,
+        Limit: opts?.pageSize,
+        IndexName: indexName,
+        ExpressionAttributeNames:
+          Object.keys(attributes.names).length > 0
+            ? attributes.names
+            : undefined,
+        ExpressionAttributeValues:
+          Object.keys(attributes.values).length > 0
+            ? attributes.values
+            : undefined,
+        ExclusiveStartKey: lastKey && marshaller.marshallItem(lastKey),
+        FilterExpression: filterExpression,
+      })
+      .then((r) => {
+        const nextStartKey =
+          !!r.LastEvaluatedKey && !!rk
+            ? marshaller.unmarshallItem(r.LastEvaluatedKey)
+            : undefined;
+        return {
+          records: r.Items
+            ? r.Items?.map(marshaller.unmarshallItem.bind(marshaller))
+            : [],
+          lastHashKey:
+            r.LastEvaluatedKey &&
+            marshaller.unmarshallItem(r.LastEvaluatedKey)[hk],
+          lastSortKey: nextStartKey?.[rk],
+          nextStartKey,
+        };
+      })
+      .catch((e) => {
+        logger.error(e);
+        return Promise.reject(e);
+      });
+  };
 /* eslint-enable */
 
 export type TableConfig<
@@ -604,7 +685,7 @@ export const Table = <
         r.Item
           ? opts?.marshaller
             ? (unmarshall(
-                (opts?.marshaller as unknown) as DynamoMarshallerFor<DynamoObject>,
+                opts?.marshaller as unknown as DynamoMarshallerFor<DynamoObject>,
                 r.Item
               ) as any)
             : (marshaller.unmarshallItem(r.Item) as any)
@@ -855,7 +936,7 @@ export const Table = <
       };
     });
     const updates = (args.updates || []).map((u) => {
-      const request = serializeSetAction(u.updates);
+      const request = serializeSetAction(u.updates as any);
       const attributes = new ExpressionAttributes();
       const expression = request.serialize(attributes);
       const key = marshaller.marshallItem(extractKey(u.key, hashKey, sortKey));
@@ -922,39 +1003,35 @@ export const Table = <
         return Promise.reject(e);
       });
   };
-  const _indexes: TableFactoryResult<
-    T,
-    PartitionKey,
-    SortKey,
-    Ixs
-  >['indexes'] = Object.keys(indexes).reduce(
-    (p, k) => ({
-      ...p,
-      ...{
-        [k]: {
-          query: query(
-            dynamo,
-            logger,
-            tableName,
-            indexes[k].partitionKey,
-            indexes[k].sortKey,
-            marshaller,
-            indexes[k].name
-          ),
-          scan: scan(
-            dynamo,
-            logger,
-            tableName,
-            indexes[k].partitionKey,
-            indexes[k].sortKey,
-            marshaller,
-            indexes[k].name
-          ),
+  const _indexes: TableFactoryResult<T, PartitionKey, SortKey, Ixs>['indexes'] =
+    Object.keys(indexes).reduce(
+      (p, k) => ({
+        ...p,
+        ...{
+          [k]: {
+            query: query(
+              dynamo,
+              logger,
+              tableName,
+              indexes[k].partitionKey,
+              indexes[k].sortKey,
+              marshaller,
+              indexes[k].name
+            ),
+            scan: scan(
+              dynamo,
+              logger,
+              tableName,
+              indexes[k].partitionKey,
+              indexes[k].sortKey,
+              marshaller,
+              indexes[k].name
+            ),
+          },
         },
-      },
-    }),
-    {} as Indexes<Ixs>
-  );
+      }),
+      {} as Indexes<Ixs>
+    );
   const _query: TableFactoryResult<
     T,
     PartitionKey,

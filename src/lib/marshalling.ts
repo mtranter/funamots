@@ -41,7 +41,7 @@ export type DynamoMarshallerFor<T extends DynamoObject> = {
 const buildMarshaller: <T extends DynamoPrimitive>(
   optional?: boolean
 ) => DynamoMarshaller<T> = <T extends DynamoPrimitive>(optional = false) => ({
-  to: (t: T) => (marshaller.marshallValue(t) as unknown) as AttributeValue,
+  to: (t: T) => marshaller.marshallValue(t) as unknown as AttributeValue,
   from: (av: AttributeValue) => {
     if (!av) {
       if (!optional) {
@@ -70,7 +70,7 @@ export const Marshallers = {
   map: <T extends DynamoObject>(schema: DynamoMarshallerFor<T>) =>
     ({
       from: (av: AttributeValue) =>
-        unmarshall<T>(schema, (av as unknown) as AttributeMap),
+        unmarshall<T>(schema, av as unknown as AttributeMap),
       to: (t: T) => marshall(t) as AttributeValue,
       optional: () => buildMarshaller<T | undefined>(true),
     } as DynamoMarshaller<T>),

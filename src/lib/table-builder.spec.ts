@@ -21,12 +21,9 @@ describe('tableBuilder', () => {
       .withGlobalIndex('gsi_by_gsip', 'gsip', 'gsis')
       .withLocalIndex('local', 'lsis');
 
-    const tableDef: TableDefinition<
-      Dto,
-      any,
-      any,
-      Record<string, never>
-    > = (builder as any)._debug();
+    const tableDef: TableDefinition<Dto, any, any, Record<string, never>> = (
+      builder as any
+    )._debug();
     expect(tableDef).toMatchObject({
       indexes: {
         gsi_by_gsip: {

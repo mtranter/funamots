@@ -50,7 +50,7 @@ export type RecursivePartial<T> = {
 
 type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 /**
- * Get all possible nested keys of an object
+ * Get all possible nested keys of an object in dot notation
  * @example
  * type Foo = {
  *  a: {
@@ -76,7 +76,6 @@ type Join<K, P> = K extends string
   : never;
 
 export type UnionToIntersection<U, Default = never> = (
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   U extends any
     ? // eslint-disable-next-line functional/no-return-void
       (k: U) => void
@@ -123,3 +122,36 @@ export type Prettify<T> = {
 export type NestedPick<A, K extends string> = Prettify<
   UnionToIntersection<_NestedPick<A, K>>
 >;
+
+/**
+ * Gets the target type of a nested key
+ * @example
+ * type Foo = {
+ *   a: {
+ *     b: {
+ *       c: string;
+ *     };
+ *   };
+ *   d: number;
+ * };
+ * type Keys = NestedTarget<Foo, "a.b">;
+ * // type Keys =  { c: string; }; };
+ * type Keys = NestedTarget<Foo, "a.b.c">;
+ * // type Keys = string;
+ */
+export type NestedTarget<
+  A,
+  K extends string
+> = K extends `${infer Key}.${infer Rest}`
+  ? Key extends keyof A
+    ? NonNullable<A[Key]> extends Record<string, unknown>
+      ? NestedTarget<NonNullable<A[Key]>, Rest>
+      : never
+    : never
+  : K extends keyof A & string
+  ? A[K]
+  : never;
+
+export type NestedTargetIs<A, B> = {
+  [K in NestedKeyOf<A, 5> & string]: NestedTarget<A, K> extends B ? K : never;
+}[NestedKeyOf<A, 5> & string];

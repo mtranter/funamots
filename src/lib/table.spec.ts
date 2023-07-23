@@ -11,7 +11,7 @@ import {
   OR,
 } from './conditions';
 import { Marshallers } from './marshalling';
-import { ifNotExists, QueryableTable, Table } from './table';
+import { ifNotExists, minus, plus, QueryableTable, Table } from './table';
 import { IndexDefinition, tableBuilder } from './table-builder';
 
 jest.setTimeout(60000); // in milliseconds
@@ -169,7 +169,10 @@ describe('Table', () => {
     });
     it('For a non-pre-existing value should set a value if not exists, using ifNotExists', async () => {
       const key = { hash: '247' };
-      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      const dto = {
+        name: ifNotExists('name', 'Fred'),
+        age: ifNotExists('age', 30),
+      };
       await simpleTable.set(key, dto);
       const saved = await simpleTable.get(key);
       expect(saved).toEqual({ hash: '247', name: 'Fred', age: 30 });
@@ -178,7 +181,10 @@ describe('Table', () => {
       const key = { hash: '111222' };
       const initialDto = { ...key, name: 'John' };
       await simpleTable.put(initialDto);
-      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      const dto = {
+        name: ifNotExists('name', 'Fred'),
+        age: ifNotExists('age', 30),
+      };
       await simpleTable.set(key, dto);
       const saved = await simpleTable.get(key);
       expect(saved).toEqual({ hash: '111222', name: 'John', age: 30 });
@@ -815,7 +821,10 @@ describe('Table', () => {
 
     it('For a non-pre-existing value should set a value if not exists, using ifNotExists', async () => {
       const key = { hash: '247aaa', sort: 1 };
-      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      const dto = {
+        name: ifNotExists('name', 'Fred'),
+        age: ifNotExists('age', 30),
+      } as const;
       await compoundTable.set(key, dto);
       const saved = await compoundTable.get(key);
       expect(saved).toEqual({ ...key, name: 'Fred', age: 30 });
@@ -824,10 +833,39 @@ describe('Table', () => {
       const key = { hash: '247aaa', sort: 1 };
       const initialDto = { ...key, name: 'John' };
       await compoundTable.put(initialDto);
-      const dto = { name: ifNotExists('Fred'), age: ifNotExists(30) };
+      const dto = {
+        name: ifNotExists('name', 'Fred'),
+        age: ifNotExists('age', 30),
+      } as const;
       await compoundTable.set(key, dto);
       const saved = await compoundTable.get(key);
       expect(saved).toEqual({ ...key, name: 'John', age: 30 });
+    });
+    it('Should increment a value using PLUS operation', async () => {
+      const key = { hash: '247aaa', sort: 1, lsirange: 12 };
+      await compoundTable.put(key);
+      await compoundTable.set(key, {
+        lsirange: plus('lsirange', 7),
+      });
+      const saved = await compoundTable.get(key);
+      expect(saved).toEqual({ ...key, lsirange: 19 });
+    });
+
+    it('Should decrement a value using MINUS operation', async () => {
+      const key = { hash: '247aaa', sort: 1, lsirange: 12 };
+      await compoundTable.put(key);
+      await compoundTable.set(key, { lsirange: minus('lsirange', 7) });
+      const saved = await compoundTable.get(key);
+      expect(saved).toEqual({ ...key, lsirange: 5 });
+    });
+    it('Should set a value using NOT_EXISTS and a PLUS operation', async () => {
+      const key = { hash: '247aaa', sort: 1 };
+      await compoundTable.put(key);
+      await compoundTable.set(key, {
+        lsirange: plus(ifNotExists('lsirange', 0), 7),
+      });
+      const saved = await compoundTable.get(key);
+      expect(saved).toEqual({ ...key, lsirange: 7 });
     });
   });
 });

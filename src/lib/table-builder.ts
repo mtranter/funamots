@@ -121,7 +121,7 @@ const _tableBuilder = <
 >(
   tableDefinition: TableDefinition<T, PartitionKey, SortKey, Ixs>
 ): TableBuilder<T, PartitionKey, SortKey, Ixs> => {
-  const withKey: WithKey<T> = {
+  const withKey = {
     withKey: <
       PK extends string & keyof T,
       SK extends (string & keyof T) | undefined = undefined
@@ -177,12 +177,12 @@ const _tableBuilder = <
         },
       }),
   };
-  return ({
+  return {
     ...withKey,
     ...build,
     ...withIndex,
     _debug: () => tableDefinition,
-  } as unknown) as TableBuilder<T, PartitionKey, SortKey, Ixs>;
+  } as unknown as TableBuilder<T, PartitionKey, SortKey, Ixs>;
 };
 
 export const tableBuilder = <T extends DynamoObject>(

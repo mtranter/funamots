@@ -266,9 +266,7 @@ const _serializeConditionExpression = (
           operator.lower
         )} AND ${attributes.addValue(operator.upper)}`;
       } else if (isInFunction(operator)) {
-        return `${attributes.addName(
-          attributePath
-        )} in (${operator.values
+        return `${attributes.addName(attributePath)} in (${operator.values
           .map((a) => attributes.addValue(a))
           .join(', ')})`;
       } else if (!!operator && isComparator(operator)) {
