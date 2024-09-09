@@ -284,7 +284,7 @@ const _serializeConditionExpression = (
         )}, ${attributes.addValue(operator.arg)})`;
       } else if (isSizeFunction(operator)) {
         return `size ${serializeComparator(
-          attributes.addName(attributePath),
+          `(${attributes.addName(attributePath)})`,
           operator.comparator,
           attributes
         )}`;
