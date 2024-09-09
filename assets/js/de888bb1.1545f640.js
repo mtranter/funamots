@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[212],{2460:t=>{t.exports=JSON.parse('{"title":"Operations","slug":"/category/operations","permalink":"/funamots/category/operations","navigation":{"previous":{"title":"Quickstart","permalink":"/funamots/quickstart"},"next":{"title":"Read Operations","permalink":"/funamots/operations/read-ops"}}}')}}]);
