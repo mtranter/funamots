@@ -35,6 +35,20 @@ describe('Condition Expression builder', () => {
     expect(attributes.names['#attr0']).toEqual('firstname');
     expect(attributes.values[':val1'].S).toEqual('Fred');
   });
+  it('should build a valid multiple comparator expression', () => {
+    const expression: ConditionExpression<MyDto> = {
+      firstname: { '<': 'Fred', '>': 'Alice' },
+    };
+    const attributes = new ExpressionAttributes();
+    const expressionString = serializeConditionExpression(
+      expression,
+      attributes
+    );
+    expect(expressionString).toEqual('#attr0 < :val1 AND #attr0 > :val2');
+    expect(attributes.names['#attr0']).toEqual('firstname');
+    expect(attributes.values[':val1'].S).toEqual('Fred');
+    expect(attributes.values[':val2'].S).toEqual('Alice');
+  });
   it('should build a valid comparator expression for nested property', () => {
     const expression: ConditionExpression<MyDto> = {
       child: {

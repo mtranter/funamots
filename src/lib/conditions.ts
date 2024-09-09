@@ -26,10 +26,9 @@ const comparatorOperators: DyanmoCompareOperator[] = [
 
 const isComparator = <V>(a: {}): a is Comparator<V> => {
   const keys = Object.keys(a);
-  return (
-    keys.length === 1 &&
-    comparatorOperators.includes(keys[0] as DyanmoCompareOperator)
-  );
+  return keys
+    .map((k) => comparatorOperators.includes(k as DyanmoCompareOperator))
+    .every(Boolean);
 };
 
 /**
@@ -211,9 +210,13 @@ const isCombinator = <A>(exp: unknown): exp is BooleanCombinatorExpression<A> =>
   (exp as BooleanCombinatorExpression<A>).__type === 'boolean_combinator';
 
 const serializeComparator = (
+  path: string,
   c: Comparator<unknown>,
   attributes: ExpressionAttributes
-) => `${Object.keys(c)[0]} ${attributes.addValue(Object.values(c)[0])}`;
+) =>
+  Object.keys(c)
+    .map((k) => `${path} ${k} ${attributes.addValue(c[k as keyof typeof c])}`)
+    .join(' AND ');
 
 const _serializeConditionExpression = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,18 +273,21 @@ const _serializeConditionExpression = (
           .map((a) => attributes.addValue(a))
           .join(', ')})`;
       } else if (!!operator && isComparator(operator)) {
-        return `${attributes.addName(attributePath)} ${serializeComparator(
+        return serializeComparator(
+          attributes.addName(attributePath),
           operator,
           attributes
-        )}`;
+        );
       } else if (isComparisonFunctionWithArg(operator)) {
         return `${operator.function} (${attributes.addName(
           attributePath
         )}, ${attributes.addValue(operator.arg)})`;
       } else if (isSizeFunction(operator)) {
-        return `size (${attributes.addName(
-          attributePath
-        )}) ${serializeComparator(operator.comparator, attributes)}`;
+        return `size ${serializeComparator(
+          attributes.addName(attributePath),
+          operator.comparator,
+          attributes
+        )}`;
       } else if (isComparisonFunction(operator)) {
         return `${operator.function} (${attributes.addName(attributePath)})`;
       } else if (typeof operator === 'object') {
